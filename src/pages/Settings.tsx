@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bot, Moon, Save, Sun } from "lucide-react";
+import { Bot, Save } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api/client";
 import { Button } from "@/app/components/Button";
@@ -50,10 +50,6 @@ export function Settings() {
     };
   }, []);
 
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", settings.theme === "dark");
-  }, [settings.theme]);
-
   const regexStatus = useMemo(() => {
     try {
       // eslint-disable-next-line no-new
@@ -90,36 +86,6 @@ export function Settings() {
           Configure app behavior, defaults, and validation rules stored in electron-store.
         </p>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Appearance</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between rounded-lg border border-[var(--clockwork-border)] p-4">
-            <div>
-              <p className="font-medium text-[var(--clockwork-gray-900)]">
-                {settings.theme === "dark" ? "Dark Theme" : "Light Theme"}
-              </p>
-              <p className="text-sm text-[var(--clockwork-gray-600)]">
-                OrangeHRM palette is preserved in both themes.
-              </p>
-            </div>
-            <Button
-              variant="secondary"
-              onClick={() =>
-                setSettings((current) => ({
-                  ...current,
-                  theme: current.theme === "light" ? "dark" : "light",
-                }))
-              }
-            >
-              {settings.theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-              Toggle Theme
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>
@@ -237,7 +203,7 @@ export function Settings() {
 
       <div className="flex items-center gap-3">
         <Button variant="primary" onClick={handleSave} disabled={saving}>
-          {saving ? <Sun className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          <Save className={`h-4 w-4 ${saving ? "animate-spin" : ""}`} />
           Save Settings
         </Button>
       </div>

@@ -101,7 +101,6 @@ async function createMainWindow(): Promise<void> {
     await mainWindow.loadFile(resolveRendererIndexPath());
   } else {
     await mainWindow.loadURL(resolveRendererUrl());
-    mainWindow.webContents.openDevTools({ mode: "detach" });
   }
 
   mainWindow.on("closed", () => {

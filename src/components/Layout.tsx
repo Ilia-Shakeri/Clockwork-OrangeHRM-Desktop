@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router";
 import {
   Cable,
@@ -8,9 +8,11 @@ import {
   Settings,
   FileChartColumn,
 } from "lucide-react";
-import { Toaster } from "sonner";
+import { toast, Toaster } from "sonner";
 import { apiClient } from "@/api/client";
 import { cn } from "@/app/lib/utils";
+import { GlassThemeToggle } from "@/components/GlassThemeToggle";
+import type { UiSettings } from "@/types/api";
 
 const navigationItems = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -22,16 +24,48 @@ const navigationItems = [
 ];
 
 export function Layout() {
+  const [settings, setSettings] = useState<UiSettings | null>(null);
+  const [isDark, setIsDark] = useState(false);
+
   useEffect(() => {
     apiClient
       .getSettings()
       .then(({ settings }) => {
-        document.documentElement.classList.toggle("dark", settings.theme === "dark");
+        setSettings(settings);
+        const nextIsDark = settings.theme === "dark";
+        setIsDark(nextIsDark);
+        document.documentElement.classList.toggle("dark", nextIsDark);
       })
       .catch(() => {
         // Ignore startup settings issues.
       });
   }, []);
+
+  const handleThemeToggle = async () => {
+    if (!settings) {
+      return;
+    }
+
+    const nextIsDark = !isDark;
+    const nextSettings: UiSettings = {
+      ...settings,
+      theme: nextIsDark ? "dark" : "light",
+    };
+
+    setIsDark(nextIsDark);
+    setSettings(nextSettings);
+    document.documentElement.classList.toggle("dark", nextIsDark);
+
+    try {
+      await apiClient.saveSettings(nextSettings);
+    } catch (error) {
+      const rollbackIsDark = !nextIsDark;
+      setIsDark(rollbackIsDark);
+      setSettings(settings);
+      document.documentElement.classList.toggle("dark", rollbackIsDark);
+      toast.error(error instanceof Error ? error.message : "Failed to save theme setting");
+    }
+  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-[var(--clockwork-bg-primary)]">
@@ -75,6 +109,10 @@ export function Layout() {
         </nav>
 
         <div className="border-t border-[var(--clockwork-border)] p-4 text-xs text-[var(--clockwork-gray-500)]">
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-xs text-[var(--clockwork-gray-600)]">Theme</span>
+            <GlassThemeToggle isDark={isDark} onToggle={() => void handleThemeToggle()} />
+          </div>
           <p>Clockwork OrangeHRM Desktop</p>
           <p>Version 1.0.0</p>
         </div>
