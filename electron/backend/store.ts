@@ -117,6 +117,26 @@ export function addExportHistory(
   return next;
 }
 
+export function removeExportHistoryByIds(
+  store: ConfigStore,
+  ids: string[],
+): ExportHistoryItem[] {
+  if (ids.length === 0) {
+    return store.get("exportHistory");
+  }
+
+  const idSet = new Set(ids);
+  const previous = store.get("exportHistory");
+  const next = previous.filter((item) => !idSet.has(item.id));
+  store.set("exportHistory", next);
+  return next;
+}
+
+export function clearExportHistory(store: ConfigStore): ExportHistoryItem[] {
+  store.set("exportHistory", []);
+  return [];
+}
+
 export function getUserGroups(store: ConfigStore): UserGroup[] {
   return store.get("userGroups");
 }

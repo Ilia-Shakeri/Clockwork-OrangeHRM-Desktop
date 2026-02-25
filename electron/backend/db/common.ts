@@ -186,33 +186,61 @@ export function computeSinceCheckInMinutes(
     return null;
   }
 
+  const selectedDate = parseIsoDateInput(dateIso);
+  const buildLocalDateTime = (
+    hours: number,
+    minutes: number,
+    seconds: number,
+  ): Date | null => {
+    if (!selectedDate) {
+      return null;
+    }
+
+    return new Date(
+      selectedDate.getFullYear(),
+      selectedDate.getMonth(),
+      selectedDate.getDate(),
+      hours,
+      minutes,
+      seconds,
+      0,
+    );
+  };
+
   let checkInDate: Date | null = null;
 
   if (value instanceof Date) {
-    checkInDate = value;
+    // DB drivers often materialize datetime values as UTC-based Date objects.
+    // For "since check-in" we need wall-clock math on the selected local date.
+    checkInDate =
+      buildLocalDateTime(
+        value.getUTCHours(),
+        value.getUTCMinutes(),
+        value.getUTCSeconds(),
+      ) ?? value;
   } else {
     const raw = String(value).trim();
     if (!raw) {
       return null;
     }
 
-    const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
-    const parsed = new Date(normalized);
-    if (!Number.isNaN(parsed.getTime())) {
-      checkInDate = parsed;
-    } else {
-      const timeMatch = /^(\d{2}):(\d{2})(?::\d{2})?$/.exec(raw);
-      const date = parseIsoDateInput(dateIso);
-      if (timeMatch && date) {
-        checkInDate = new Date(
-          date.getFullYear(),
-          date.getMonth(),
-          date.getDate(),
-          Number(timeMatch[1]),
-          Number(timeMatch[2]),
-          0,
-          0,
-        );
+    const timeMatch = /(\d{2}):(\d{2})(?::(\d{2}))?/.exec(raw);
+    if (timeMatch) {
+      const localDate = buildLocalDateTime(
+        Number(timeMatch[1]),
+        Number(timeMatch[2]),
+        Number(timeMatch[3] ?? "0"),
+      );
+      if (localDate) {
+        checkInDate = localDate;
+      }
+    }
+
+    if (!checkInDate) {
+      const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+      const parsed = new Date(normalized);
+      if (!Number.isNaN(parsed.getTime())) {
+        checkInDate = parsed;
       }
     }
   }

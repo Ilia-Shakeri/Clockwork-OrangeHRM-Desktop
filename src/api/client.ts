@@ -171,6 +171,19 @@ class ApiClient {
     return this.request<{ history: ExportHistoryItem[] }>("/api/exports/history");
   }
 
+  deleteExportHistoryItems(ids: string[]): Promise<{ ok: boolean; history: ExportHistoryItem[] }> {
+    return this.request<{ ok: boolean; history: ExportHistoryItem[] }>("/api/exports/history/delete", {
+      method: "POST",
+      json: { ids },
+    });
+  }
+
+  clearExportHistory(): Promise<{ ok: boolean; history: ExportHistoryItem[] }> {
+    return this.request<{ ok: boolean; history: ExportHistoryItem[] }>("/api/exports/history", {
+      method: "DELETE",
+    });
+  }
+
   getPythonStatus(): Promise<PythonStatusResponse> {
     return this.request<PythonStatusResponse>("/api/python/status");
   }

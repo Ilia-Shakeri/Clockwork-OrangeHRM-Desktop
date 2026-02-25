@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { FolderOpen } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { FolderOpen, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api/client";
 import { Badge } from "@/app/components/Badge";
@@ -12,6 +12,11 @@ import { formatDate, formatDateTime } from "@/lib/helpers";
 export function Exports() {
   const [history, setHistory] = useState<ExportHistoryItem[]>([]);
   const [defaultCalendar, setDefaultCalendar] = useState<DateDisplayCalendar>("shamsi");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [clearing, setClearing] = useState(false);
+
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const allSelected = history.length > 0 && selectedIds.length === history.length;
 
   const loadHistory = useCallback(async () => {
     try {
@@ -52,10 +57,58 @@ export function Exports() {
     };
   }, [loadHistory]);
 
+  useEffect(() => {
+    const validIds = new Set(history.map((item) => item.id));
+    setSelectedIds((current) => current.filter((id) => validIds.has(id)));
+  }, [history]);
+
   const handleOpen = async (filePath: string) => {
     const result = await window.clockwork.showItemInFolder(filePath);
     if (!result.ok) {
       toast.error("Unable to open file location.");
+    }
+  };
+
+  const toggleSelection = (id: string) => {
+    setSelectedIds((current) => {
+      if (current.includes(id)) {
+        return current.filter((itemId) => itemId !== id);
+      }
+
+      return [...current, id];
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds([]);
+      return;
+    }
+
+    setSelectedIds(history.map((item) => item.id));
+  };
+
+  const handleClearSelected = async () => {
+    if (selectedIds.length === 0) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Clear ${selectedIds.length} selected export record(s)?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setClearing(true);
+
+    try {
+      const response = await apiClient.deleteExportHistoryItems(selectedIds);
+      setHistory(response.history);
+      setSelectedIds([]);
+      toast.success(`Cleared ${selectedIds.length} export record(s).`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to clear selected exports");
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -104,7 +157,28 @@ export function Exports() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Export History</CardTitle>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle>Export History</CardTitle>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={toggleSelectAll}
+                disabled={history.length === 0 || clearing}
+              >
+                {allSelected ? "Unselect All" : "Select All"}
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => void handleClearSelected()}
+                disabled={selectedIds.length === 0 || clearing}
+              >
+                <Trash2 className="h-4 w-4" />
+                Clear Selected
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {history.length === 0 ? (
@@ -116,21 +190,30 @@ export function Exports() {
                   key={item.id}
                   className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-[var(--clockwork-border)] p-4"
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-2 flex items-center gap-2">
-                      <Badge variant={item.format === "pdf" ? "warning" : "success"}>
-                        {item.format.toUpperCase()}
-                      </Badge>
-                      <p className="truncate text-sm font-semibold text-[var(--clockwork-gray-900)]">{item.title}</p>
-                    </div>
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedSet.has(item.id)}
+                      onChange={() => toggleSelection(item.id)}
+                      className="mt-1 h-4 w-4 accent-[var(--clockwork-orange)]"
+                    />
 
-                    <p className="text-sm text-[var(--clockwork-gray-600)]">
-                      {formatDate(item.from, defaultCalendar)} to {formatDate(item.to, defaultCalendar)} | {item.rows} rows | {item.totalHours.toFixed(2)} hrs
-                    </p>
-                    <p className="text-xs text-[var(--clockwork-gray-500)]">
-                      {formatDateTime(item.createdAt, defaultCalendar)}
-                    </p>
-                    <p className="truncate text-xs text-[var(--clockwork-gray-500)]">{item.filePath}</p>
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-2 flex items-center gap-2">
+                        <Badge variant={item.format === "pdf" ? "warning" : "success"}>
+                          {item.format.toUpperCase()}
+                        </Badge>
+                        <p className="truncate text-sm font-semibold text-[var(--clockwork-gray-900)]">{item.title}</p>
+                      </div>
+
+                      <p className="text-sm text-[var(--clockwork-gray-600)]">
+                        {formatDate(item.from, defaultCalendar)} to {formatDate(item.to, defaultCalendar)} | {item.rows} rows | {item.totalHours.toFixed(2)} hrs
+                      </p>
+                      <p className="text-xs text-[var(--clockwork-gray-500)]">
+                        {formatDateTime(item.createdAt, defaultCalendar)}
+                      </p>
+                      <p className="truncate text-xs text-[var(--clockwork-gray-500)]">{item.filePath}</p>
+                    </div>
                   </div>
 
                   <Button variant="ghost" size="sm" onClick={() => void handleOpen(item.filePath)}>

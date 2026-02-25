@@ -101,6 +101,8 @@ export interface ExportMeta {
   title: string;
   from: string;
   to: string;
+  userDisplayName?: string;
+  userDisplayMap?: Record<string, string>;
 }
 
 export interface ExportHistoryItem {

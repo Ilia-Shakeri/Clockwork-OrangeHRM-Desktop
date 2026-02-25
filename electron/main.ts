@@ -12,6 +12,7 @@ let isQuitting = false;
 const IPC_CHANNELS = {
   getApiBaseUrl: "clockwork:get-api-base-url",
   openSaveDialog: "clockwork:open-save-dialog",
+  openDirectoryDialog: "clockwork:open-directory-dialog",
   showItemInFolder: "clockwork:show-item-in-folder",
   openExternal: "clockwork:open-external",
   windowMinimize: "clockwork:window-minimize",
@@ -51,6 +52,23 @@ function registerIpcHandlers(): void {
       }
 
       return dialog.showSaveDialog(options ?? {});
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.openDirectoryDialog,
+    async (_event, options?: Electron.OpenDialogOptions) => {
+      const ownerWindow = BrowserWindow.getFocusedWindow() ?? mainWindow;
+      const openOptions: Electron.OpenDialogOptions = {
+        properties: ["openDirectory", "createDirectory"],
+        ...options,
+      };
+
+      if (ownerWindow) {
+        return dialog.showOpenDialog(ownerWindow, openOptions);
+      }
+
+      return dialog.showOpenDialog(openOptions);
     },
   );
 
@@ -139,13 +157,16 @@ async function bootstrap(): Promise<void> {
 
   const store = createConfigStore();
   const appPath = app.isPackaged ? process.resourcesPath : app.getAppPath();
+  const appBundlePath = app.getAppPath();
   const pythonScriptPath = path.join(appPath, "python", "generate_report_summary.py");
+  const mainLogoPath = path.join(appBundlePath, "src", "assets", "Main-Logo.png");
 
   localApiServer = await startLocalApiServer({
     store,
     appVersion: app.getVersion(),
     isDev: !app.isPackaged,
     pythonScriptPath,
+    mainLogoPath,
     logger: (message, details) => {
       if (!app.isPackaged) {
         // eslint-disable-next-line no-console

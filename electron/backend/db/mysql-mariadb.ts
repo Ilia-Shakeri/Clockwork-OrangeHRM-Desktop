@@ -56,6 +56,20 @@ interface MySqlPresenceQueryRow extends RowDataPacket {
   latestOpenCheckIn: Date | string | null;
 }
 
+interface AttendanceTableVariant {
+  name: string;
+  tableName: string;
+  userJoinColumn: string;
+  punchInColumn: string;
+  punchOutColumn: string;
+}
+
+interface EmployeeNameVariant {
+  name: string;
+  fullNameExpr: string;
+  employeeJoinClause: string;
+}
+
 const dialect = createDialectHelpers("mysql");
 
 function createPoolConfig(connection: ConnectionPayload): PoolOptions {
@@ -323,12 +337,7 @@ export class MySqlMariaDbAdapter implements DbAdapter {
 
     const normalizedDate = toLocalIsoDate(parsedDate);
 
-    const fullNameExpr = dialect.concatSpace([
-      "e.first_name",
-      "e.middle_name",
-      "e.last_name",
-    ]);
-    const attempts = this.buildPresenceAttempts(fullNameExpr, normalizedDate);
+    const attempts = this.buildPresenceAttempts(normalizedDate);
 
     let rows: MySqlPresenceQueryRow[] = [];
     const schemaErrors: string[] = [];
@@ -352,8 +361,11 @@ export class MySqlMariaDbAdapter implements DbAdapter {
     }
 
     if (rows.length === 0 && schemaErrors.length === attempts.length) {
+      const summarizedAttempts = schemaErrors.slice(0, 4).join(", ");
+      const extraAttempts =
+        schemaErrors.length > 4 ? `, ... (${schemaErrors.length} attempts)` : "";
       throw new Error(
-        `Attendance schema is unsupported. Tried: ${schemaErrors.join(", ")}.`,
+        `Attendance schema is unsupported. Tried: ${summarizedAttempts}${extraAttempts}.`,
       );
     }
 
@@ -402,70 +414,141 @@ export class MySqlMariaDbAdapter implements DbAdapter {
     };
   }
 
-  private buildPresenceAttempts(
-    fullNameExpr: string,
-    dateIso: string,
-  ): QueryAttempt[] {
-    const buildAttempt = (name: string, punchInColumn: string, punchOutColumn: string) => ({
-      name,
-      sql: `
-        SELECT
-          CAST(u.id AS CHAR) AS userId,
-          u.user_name AS username,
-          ${fullNameExpr} AS fullName,
-          MIN(ar.${punchInColumn}) AS firstCheckIn,
-          MAX(ar.${punchOutColumn}) AS lastCheckOut,
-          COALESCE(
-            SUM(
-              CASE
-                WHEN ar.${punchInColumn} IS NOT NULL AND ar.${punchOutColumn} IS NOT NULL
-                  THEN ${dialect.timeDiffSeconds(`ar.${punchInColumn}`, `ar.${punchOutColumn}`)}
-                ELSE 0
-              END
-            ),
-            0
-          ) AS workedSeconds,
-          MAX(
-            CASE
-              WHEN ar.${punchInColumn} IS NOT NULL AND ar.${punchOutColumn} IS NULL THEN 1
-              ELSE 0
-            END
-          ) AS hasOpenPunch,
-          MAX(
-            CASE
-              WHEN ar.${punchInColumn} IS NOT NULL AND ar.${punchOutColumn} IS NOT NULL THEN 1
-              ELSE 0
-            END
-          ) AS hasCompletedPunch,
-          MAX(
-            CASE
-              WHEN ar.${punchInColumn} IS NOT NULL AND ar.${punchOutColumn} IS NULL
-                THEN ar.${punchInColumn}
-              ELSE NULL
-            END
-          ) AS latestOpenCheckIn
-        FROM ohrm_attendance_record ar
-        INNER JOIN ohrm_user u ON u.emp_number = ar.employee_id
-        LEFT JOIN hs_hr_employee e ON e.emp_number = ar.employee_id
-        WHERE ${dialect.date(`ar.${punchInColumn}`)} = ?
-        GROUP BY u.id, u.user_name, e.first_name, e.middle_name, e.last_name
-        ORDER BY u.user_name ASC
-      `,
-      params: [dateIso],
-    });
+  private buildAttendanceTableVariants(): AttendanceTableVariant[] {
+    return [
+      {
+        name: "attendance_record_user_time",
+        tableName: "ohrm_attendance_record",
+        userJoinColumn: "employee_id",
+        punchInColumn: "punch_in_user_time",
+        punchOutColumn: "punch_out_user_time",
+      },
+      {
+        name: "attendance_record_utc_time",
+        tableName: "ohrm_attendance_record",
+        userJoinColumn: "employee_id",
+        punchInColumn: "punch_in_utc_time",
+        punchOutColumn: "punch_out_utc_time",
+      },
+      {
+        name: "attendance_record_time",
+        tableName: "ohrm_attendance_record",
+        userJoinColumn: "employee_id",
+        punchInColumn: "punch_in_time",
+        punchOutColumn: "punch_out_time",
+      },
+      {
+        name: "attendance_record_user_time_by_emp_number",
+        tableName: "ohrm_attendance_record",
+        userJoinColumn: "emp_number",
+        punchInColumn: "punch_in_user_time",
+        punchOutColumn: "punch_out_user_time",
+      },
+      {
+        name: "hs_hr_attendance_in_out_time",
+        tableName: "hs_hr_attendance",
+        userJoinColumn: "employee_id",
+        punchInColumn: "in_time",
+        punchOutColumn: "out_time",
+      },
+      {
+        name: "hs_hr_attendance_in_out_time_by_emp_number",
+        tableName: "hs_hr_attendance",
+        userJoinColumn: "emp_number",
+        punchInColumn: "in_time",
+        punchOutColumn: "out_time",
+      },
+    ];
+  }
+
+  private buildEmployeeNameVariants(joinColumn: string): EmployeeNameVariant[] {
+    const modernFullNameExpr = dialect.concatSpace([
+      "e.first_name",
+      "e.middle_name",
+      "e.last_name",
+    ]);
+    const legacyFullNameExpr = dialect.concatSpace([
+      "e.emp_firstname",
+      "e.emp_middle_name",
+      "e.emp_lastname",
+    ]);
+    const employeeJoinClause = `LEFT JOIN hs_hr_employee e ON e.emp_number = ar.${joinColumn}`;
 
     return [
-      buildAttempt(
-        "attendance_record_user_time",
-        "punch_in_user_time",
-        "punch_out_user_time",
-      ),
-      buildAttempt(
-        "attendance_record_utc_time",
-        "punch_in_utc_time",
-        "punch_out_utc_time",
-      ),
+      {
+        name: "employee_name_modern",
+        fullNameExpr: modernFullNameExpr,
+        employeeJoinClause,
+      },
+      {
+        name: "employee_name_legacy",
+        fullNameExpr: legacyFullNameExpr,
+        employeeJoinClause,
+      },
+      {
+        name: "user_name_only",
+        fullNameExpr: "u.user_name",
+        employeeJoinClause: "",
+      },
     ];
+  }
+
+  private buildPresenceAttempts(dateIso: string): QueryAttempt[] {
+    const attempts: QueryAttempt[] = [];
+
+    for (const tableVariant of this.buildAttendanceTableVariants()) {
+      for (const nameVariant of this.buildEmployeeNameVariants(tableVariant.userJoinColumn)) {
+        attempts.push({
+          name: `${tableVariant.name}+${nameVariant.name}`,
+          sql: `
+            SELECT
+              CAST(u.id AS CHAR) AS userId,
+              u.user_name AS username,
+              ${nameVariant.fullNameExpr} AS fullName,
+              MIN(ar.${tableVariant.punchInColumn}) AS firstCheckIn,
+              MAX(ar.${tableVariant.punchOutColumn}) AS lastCheckOut,
+              COALESCE(
+                SUM(
+                  CASE
+                    WHEN ar.${tableVariant.punchInColumn} IS NOT NULL AND ar.${tableVariant.punchOutColumn} IS NOT NULL
+                      THEN ${dialect.timeDiffSeconds(`ar.${tableVariant.punchInColumn}`, `ar.${tableVariant.punchOutColumn}`)}
+                    ELSE 0
+                  END
+                ),
+                0
+              ) AS workedSeconds,
+              MAX(
+                CASE
+                  WHEN ar.${tableVariant.punchInColumn} IS NOT NULL AND ar.${tableVariant.punchOutColumn} IS NULL THEN 1
+                  ELSE 0
+                END
+              ) AS hasOpenPunch,
+              MAX(
+                CASE
+                  WHEN ar.${tableVariant.punchInColumn} IS NOT NULL AND ar.${tableVariant.punchOutColumn} IS NOT NULL THEN 1
+                  ELSE 0
+                END
+              ) AS hasCompletedPunch,
+              MAX(
+                CASE
+                  WHEN ar.${tableVariant.punchInColumn} IS NOT NULL AND ar.${tableVariant.punchOutColumn} IS NULL
+                    THEN ar.${tableVariant.punchInColumn}
+                  ELSE NULL
+                END
+              ) AS latestOpenCheckIn
+            FROM ${tableVariant.tableName} ar
+            INNER JOIN ohrm_user u ON u.emp_number = ar.${tableVariant.userJoinColumn}
+            ${nameVariant.employeeJoinClause}
+            WHERE ${dialect.date(`ar.${tableVariant.punchInColumn}`)} = ?
+            GROUP BY u.id, u.user_name, fullName
+            ORDER BY u.user_name ASC
+          `,
+          params: [dateIso],
+        });
+      }
+    }
+
+    return attempts;
   }
 
   async buildReport(input: ReportRequest): Promise<ReportPayload> {
@@ -484,12 +567,7 @@ export class MySqlMariaDbAdapter implements DbAdapter {
 
     const range = resolveDateRange(input.dateRange);
     const placeholders = input.userIds.map(() => "?").join(",");
-    const fullNameExpr = dialect.concatSpace([
-      "e.first_name",
-      "e.middle_name",
-      "e.last_name",
-    ]);
-    const attempts = this.buildReportAttempts(fullNameExpr, placeholders, input, range);
+    const attempts = this.buildReportAttempts(placeholders, input, range);
 
     let rows: MySqlAttendanceQueryRow[] = [];
     const schemaErrors: string[] = [];
@@ -513,8 +591,11 @@ export class MySqlMariaDbAdapter implements DbAdapter {
     }
 
     if (rows.length === 0 && schemaErrors.length === attempts.length) {
+      const summarizedAttempts = schemaErrors.slice(0, 4).join(", ");
+      const extraAttempts =
+        schemaErrors.length > 4 ? `, ... (${schemaErrors.length} attempts)` : "";
       throw new Error(
-        `Attendance schema is unsupported. Tried: ${schemaErrors.join(", ")}.`,
+        `Attendance schema is unsupported. Tried: ${summarizedAttempts}${extraAttempts}.`,
       );
     }
 
@@ -542,43 +623,37 @@ export class MySqlMariaDbAdapter implements DbAdapter {
   }
 
   private buildReportAttempts(
-    fullNameExpr: string,
     placeholders: string,
     input: ReportRequest,
     range: { from: string; to: string },
   ): QueryAttempt[] {
-    const buildAttempt = (name: string, punchInColumn: string, punchOutColumn: string) => ({
-      name,
-      sql: `
-        SELECT
-          CAST(u.id AS CHAR) AS userId,
-          u.user_name AS username,
-          ${fullNameExpr} AS fullName,
-          ${dialect.date(`ar.${punchInColumn}`)} AS attendanceDate,
-          ${dialect.time(`ar.${punchInColumn}`)} AS checkIn,
-          ${dialect.time(`ar.${punchOutColumn}`)} AS checkOut,
-          ROUND(${dialect.timeDiffSeconds(`ar.${punchInColumn}`, `ar.${punchOutColumn}`)} / 3600, 2) AS hours
-        FROM ohrm_attendance_record ar
-        INNER JOIN ohrm_user u ON u.emp_number = ar.employee_id
-        LEFT JOIN hs_hr_employee e ON e.emp_number = ar.employee_id
-        WHERE u.id IN (${placeholders})
-          AND ${dialect.date(`ar.${punchInColumn}`)} BETWEEN ? AND ?
-        ORDER BY attendanceDate ASC, username ASC
-      `,
-      params: [...input.userIds, range.from, range.to],
-    });
+    const attempts: QueryAttempt[] = [];
 
-    return [
-      buildAttempt(
-        "attendance_record_user_time",
-        "punch_in_user_time",
-        "punch_out_user_time",
-      ),
-      buildAttempt(
-        "attendance_record_utc_time",
-        "punch_in_utc_time",
-        "punch_out_utc_time",
-      ),
-    ];
+    for (const tableVariant of this.buildAttendanceTableVariants()) {
+      for (const nameVariant of this.buildEmployeeNameVariants(tableVariant.userJoinColumn)) {
+        attempts.push({
+          name: `${tableVariant.name}+${nameVariant.name}`,
+          sql: `
+            SELECT
+              CAST(u.id AS CHAR) AS userId,
+              u.user_name AS username,
+              ${nameVariant.fullNameExpr} AS fullName,
+              ${dialect.date(`ar.${tableVariant.punchInColumn}`)} AS attendanceDate,
+              ${dialect.time(`ar.${tableVariant.punchInColumn}`)} AS checkIn,
+              ${dialect.time(`ar.${tableVariant.punchOutColumn}`)} AS checkOut,
+              ROUND(${dialect.timeDiffSeconds(`ar.${tableVariant.punchInColumn}`, `ar.${tableVariant.punchOutColumn}`)} / 3600, 2) AS hours
+            FROM ${tableVariant.tableName} ar
+            INNER JOIN ohrm_user u ON u.emp_number = ar.${tableVariant.userJoinColumn}
+            ${nameVariant.employeeJoinClause}
+            WHERE u.id IN (${placeholders})
+              AND ${dialect.date(`ar.${tableVariant.punchInColumn}`)} BETWEEN ? AND ?
+            ORDER BY attendanceDate ASC, username ASC
+          `,
+          params: [...input.userIds, range.from, range.to],
+        });
+      }
+    }
+
+    return attempts;
   }
 }

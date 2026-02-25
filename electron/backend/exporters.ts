@@ -1,6 +1,30 @@
+import fs from "node:fs/promises";
 import PDFDocument from "pdfkit";
 import { format as formatJalali } from "date-fns-jalali";
 import type { ExportMeta, ReportPayload, ReportRow } from "./dtos";
+
+interface PdfBuildOptions {
+  logoPath?: string;
+}
+
+interface UserSection {
+  userId: string;
+  displayName: string;
+  username: string;
+  rows: ReportRow[];
+}
+
+interface PdfColumn {
+  key: "shamsiDate" | "hijriDate" | "checkIn" | "checkOut" | "hours" | "username";
+  label: string;
+  width: number;
+}
+
+const HIJRI_DATE_FORMATTER = new Intl.DateTimeFormat("en-u-ca-islamic", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 
 function csvEscape(value: string | number | null): string {
   if (value === null || value === undefined) {
@@ -37,150 +61,329 @@ function parseIsoDate(value: string): Date | null {
   return parsed;
 }
 
-function formatGregorianDate(date: Date): string {
+function toIsoDate(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
-  return `${year}/${month}/${day}`;
+  return `${year}-${month}-${day}`;
 }
 
-function formatTime(date: Date): string {
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${hours}:${minutes}`;
-}
-
-function formatGregorianFromIso(value: string): string {
+function formatDateOnly(value: string): string {
   const parsed = parseIsoDate(value);
-  return parsed ? formatGregorianDate(parsed) : value;
+  return parsed ? toIsoDate(parsed) : value;
 }
 
-function formatSolarFromIso(value: string): string {
+function formatShamsiDateOnly(value: string): string {
   const parsed = parseIsoDate(value);
-  return parsed ? formatJalali(parsed, "yyyy/MM/dd") : value;
+  return parsed ? formatJalali(parsed, "yyyy-MM-dd") : value;
 }
 
-interface ExportDateRow extends ReportRow {
-  dateGregorian: string;
-  dateSolar: string;
+function formatHijriDateOnly(value: string): string {
+  const parsed = parseIsoDate(value);
+  if (!parsed) {
+    return value;
+  }
+
+  try {
+    const parts = HIJRI_DATE_FORMATTER.formatToParts(parsed);
+    const year = parts.find((part) => part.type === "year")?.value;
+    const month = parts.find((part) => part.type === "month")?.value;
+    const day = parts.find((part) => part.type === "day")?.value;
+
+    if (!year || !month || !day) {
+      return value;
+    }
+
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  } catch {
+    return value;
+  }
 }
 
-function withDualDates(rows: ReportRow[]): ExportDateRow[] {
-  return rows.map((row) => ({
-    ...row,
-    dateGregorian: formatGregorianFromIso(row.date),
-    dateSolar: formatSolarFromIso(row.date),
-  }));
+function formatNow(value: Date): string {
+  const date = toIsoDate(value);
+  const hours = String(value.getHours()).padStart(2, "0");
+  const minutes = String(value.getMinutes()).padStart(2, "0");
+  return `${date} ${hours}:${minutes}`;
+}
+
+function computeHours(rows: ReportRow[]): number {
+  return rows.reduce((sum, row) => sum + row.hours, 0);
+}
+
+function resolveDisplayName(
+  row: ReportRow | null,
+  userId: string,
+  userDisplayMap: Record<string, string> | undefined,
+): string {
+  const mapped = userDisplayMap?.[userId]?.trim();
+  if (mapped) {
+    return mapped;
+  }
+
+  if (row?.fullName?.trim()) {
+    return row.fullName.trim();
+  }
+
+  if (row?.username?.trim()) {
+    return row.username.trim();
+  }
+
+  return userId;
+}
+
+function createUserSections(rows: ReportRow[], meta?: ExportMeta): UserSection[] {
+  const sectionsByUser = new Map<string, UserSection>();
+
+  for (const row of rows) {
+    const existing = sectionsByUser.get(row.userId);
+    if (existing) {
+      existing.rows.push(row);
+      continue;
+    }
+
+    sectionsByUser.set(row.userId, {
+      userId: row.userId,
+      displayName: resolveDisplayName(row, row.userId, meta?.userDisplayMap),
+      username: row.username,
+      rows: [row],
+    });
+  }
+
+  if (meta?.userDisplayMap) {
+    for (const [userId, displayName] of Object.entries(meta.userDisplayMap)) {
+      const existing = sectionsByUser.get(userId);
+      if (existing) {
+        existing.displayName = displayName;
+        continue;
+      }
+
+      sectionsByUser.set(userId, {
+        userId,
+        displayName,
+        username: "",
+        rows: [],
+      });
+    }
+  }
+
+  if (sectionsByUser.size === 0 && meta?.userDisplayName) {
+    sectionsByUser.set(meta.userDisplayName, {
+      userId: meta.userDisplayName,
+      displayName: meta.userDisplayName,
+      username: "",
+      rows: [],
+    });
+  }
+
+  return Array.from(sectionsByUser.values());
+}
+
+async function loadLogoBuffer(pathToLogo?: string): Promise<Buffer | null> {
+  if (!pathToLogo) {
+    return null;
+  }
+
+  try {
+    return await fs.readFile(pathToLogo);
+  } catch {
+    return null;
+  }
+}
+
+function drawPdfPageHeader(
+  doc: PDFKit.PDFDocument,
+  meta: ExportMeta,
+  generatedAt: string,
+  logoBuffer: Buffer | null,
+): number {
+  const margin = 40;
+  const logoTop = 26;
+  let titleX = margin;
+
+  if (logoBuffer) {
+    try {
+      doc.image(logoBuffer, margin, logoTop, {
+        fit: [148, 48],
+      });
+      titleX = 198;
+    } catch {
+      titleX = margin;
+    }
+  }
+
+  doc.fillColor("#0B1523").font("Helvetica-Bold").fontSize(16).text(meta.title, titleX, 32, {
+    width: doc.page.width - titleX - margin,
+  });
+
+  doc.fillColor("#374151").font("Helvetica").fontSize(10);
+  doc.text(`Date Range: ${formatDateOnly(meta.from)} to ${formatDateOnly(meta.to)}`, titleX, 56, {
+    width: doc.page.width - titleX - margin,
+  });
+  doc.text(`Generated: ${generatedAt}`, titleX, 70, {
+    width: doc.page.width - titleX - margin,
+  });
+
+  doc
+    .moveTo(margin, 92)
+    .lineTo(doc.page.width - margin, 92)
+    .strokeColor("#D1D5DB")
+    .lineWidth(1)
+    .stroke();
+
+  return 106;
+}
+
+function drawPdfTableHeader(
+  doc: PDFKit.PDFDocument,
+  columns: PdfColumn[],
+  startX: number,
+  startY: number,
+): void {
+  const totalWidth = columns.reduce((sum, column) => sum + column.width, 0);
+  doc.rect(startX, startY, totalWidth, 22).fill("#F58321");
+  doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(9);
+
+  let x = startX;
+  for (const column of columns) {
+    doc.text(column.label, x + 6, startY + 6, {
+      width: column.width - 12,
+      align: "left",
+    });
+    x += column.width;
+  }
+}
+
+function drawPdfTableRow(
+  doc: PDFKit.PDFDocument,
+  row: ReportRow,
+  columns: PdfColumn[],
+  startX: number,
+  startY: number,
+  zebra: boolean,
+): void {
+  const totalWidth = columns.reduce((sum, column) => sum + column.width, 0);
+  const rowHeight = 22;
+
+  if (zebra) {
+    doc.rect(startX, startY, totalWidth, rowHeight).fill("#F9FAFB");
+  }
+
+  doc.rect(startX, startY, totalWidth, rowHeight).strokeColor("#E5E7EB").lineWidth(0.6).stroke();
+  doc.fillColor("#111827").font("Helvetica").fontSize(9);
+
+  let x = startX;
+  for (const column of columns) {
+    const value =
+      column.key === "shamsiDate"
+        ? formatShamsiDateOnly(row.date)
+        : column.key === "hijriDate"
+          ? formatHijriDateOnly(row.date)
+        : column.key === "checkIn"
+          ? row.checkIn || "-"
+          : column.key === "checkOut"
+            ? row.checkOut || "-"
+            : column.key === "hours"
+              ? row.hours.toFixed(2)
+              : row.username;
+
+    doc.text(value, x + 6, startY + 6, {
+      width: column.width - 12,
+      ellipsis: true,
+      align: column.key === "hours" ? "right" : "left",
+    });
+    x += column.width;
+  }
 }
 
 export function buildCsv(reportPayload: ReportPayload, meta?: ExportMeta): Buffer {
-  const rowsWithDates = withDualDates(reportPayload.rows);
-  const header = [
-    "Username",
-    "Full Name",
-    "Date (Gregorian)",
-    "Date (Solar)",
-    "Check In",
-    "Check Out",
-    "Hours",
-  ];
+  const sections = createUserSections(reportPayload.rows, meta);
+  const generatedAt = formatNow(new Date());
+  const lines: string[] = [];
 
-  const lines = [header.join(",")];
+  lines.push(`Report Title,${csvEscape(meta?.title ?? "Clockwork Attendance Report")}`);
+  if (meta) {
+    lines.push(`Date Range,${csvEscape(formatDateOnly(meta.from))},${csvEscape(formatDateOnly(meta.to))}`);
+  }
+  lines.push(`Generated At,${csvEscape(generatedAt)}`);
+  lines.push("");
 
-  for (const row of rowsWithDates) {
-    lines.push(
-      [
-        csvEscape(row.username),
-        csvEscape(row.fullName),
-        csvEscape(row.dateGregorian),
-        csvEscape(row.dateSolar),
-        csvEscape(row.checkIn),
-        csvEscape(row.checkOut),
-        csvEscape(row.hours),
-      ].join(","),
-    );
+  const header = ["Shamsi Date", "Hijri Date", "User", "Username", "Check In", "Check Out", "Hours"];
+  lines.push(header.join(","));
+
+  for (const section of sections) {
+    if (section.rows.length === 0) {
+      lines.push(
+        [
+          "",
+          "",
+          csvEscape(section.displayName),
+          csvEscape(section.username),
+          "",
+          "",
+          "",
+        ].join(","),
+      );
+      continue;
+    }
+
+    for (const row of section.rows) {
+      lines.push(
+        [
+          csvEscape(formatShamsiDateOnly(row.date)),
+          csvEscape(formatHijriDateOnly(row.date)),
+          csvEscape(section.displayName),
+          csvEscape(row.username),
+          csvEscape(row.checkIn),
+          csvEscape(row.checkOut),
+          csvEscape(row.hours.toFixed(2)),
+        ].join(","),
+      );
+    }
   }
 
   lines.push("");
-  lines.push(`Total Hours,${csvEscape(reportPayload.totals.hours)}`);
+  lines.push(`Total Hours,${csvEscape(reportPayload.totals.hours.toFixed(2))}`);
   lines.push(`Total Records,${csvEscape(reportPayload.totals.records)}`);
   lines.push(`Total Users,${csvEscape(reportPayload.totals.users)}`);
 
-  if (meta) {
-    lines.push(`Range (Gregorian),${csvEscape(formatGregorianFromIso(meta.from))},${csvEscape(formatGregorianFromIso(meta.to))}`);
-    lines.push(`Range (Solar),${csvEscape(formatSolarFromIso(meta.from))},${csvEscape(formatSolarFromIso(meta.to))}`);
+  if (sections.length > 1) {
+    lines.push("");
+    lines.push("Per User Totals");
+    for (const section of sections) {
+      lines.push(
+        [csvEscape(section.displayName), csvEscape(computeHours(section.rows).toFixed(2))].join(","),
+      );
+    }
   }
 
   return Buffer.from(lines.join("\n"), "utf8");
 }
 
-function drawPdfTableHeader(
-  doc: PDFKit.PDFDocument,
-  columns: Array<{ label: string; width: number }>,
-  startX: number,
-  startY: number,
-): void {
-  let x = startX;
-  doc.rect(startX, startY - 2, 520, 20).fill("#F58321");
-  doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(8);
-
-  for (const column of columns) {
-    doc.text(column.label, x + 4, startY + 3, {
-      width: column.width - 8,
-      align: "left",
-    });
-    x += column.width;
-  }
-
-  doc.fillColor("#111111").font("Helvetica");
-}
-
-type PdfRowKey =
-  | "dateGregorian"
-  | "dateSolar"
-  | "username"
-  | "fullName"
-  | "checkIn"
-  | "checkOut"
-  | "hoursLabel";
-
-function drawPdfRow(
-  doc: PDFKit.PDFDocument,
-  row: ExportDateRow,
-  columns: Array<{ key: PdfRowKey; width: number }>,
-  startX: number,
-  startY: number,
-): void {
-  const rowHeight = 20;
-  doc.rect(startX, startY, 520, rowHeight).strokeColor("#E5E7EB").lineWidth(0.5).stroke();
-
-  let x = startX;
-  for (const column of columns) {
-    const value =
-      column.key === "hoursLabel"
-        ? row.hours.toFixed(2)
-        : ((row[column.key] ?? "") as string | number);
-
-    doc.text(String(value), x + 4, startY + 5, {
-      width: column.width - 8,
-      align: "left",
-      ellipsis: true,
-    });
-
-    x += column.width;
-  }
-}
-
 export async function buildPdf(
   reportPayload: ReportPayload,
   meta: ExportMeta,
+  options: PdfBuildOptions = {},
 ): Promise<Buffer> {
   const doc = new PDFDocument({
     size: "A4",
-    margin: 36,
+    margin: 40,
     compress: true,
   });
-  const rowsWithDates = withDualDates(reportPayload.rows);
+  const logoBuffer = await loadLogoBuffer(options.logoPath);
+  const sections = createUserSections(reportPayload.rows, meta);
+  const generatedAt = formatNow(new Date());
+  const margin = 40;
+  const tableStartX = margin;
+  const tableBottomLimit = doc.page.height - margin - 36;
+  const columns: PdfColumn[] = [
+    { key: "shamsiDate", label: "Shamsi", width: 90 },
+    { key: "hijriDate", label: "Hijri", width: 90 },
+    { key: "username", label: "Username", width: 95 },
+    { key: "checkIn", label: "Check In", width: 80 },
+    { key: "checkOut", label: "Check Out", width: 80 },
+    { key: "hours", label: "Hours", width: 80 },
+  ];
 
   const chunks: Buffer[] = [];
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -190,85 +393,94 @@ export async function buildPdf(
     doc.on("error", (error) => reject(error));
   });
 
-  doc.rect(0, 0, doc.page.width, 70).fill("#F58321");
-  doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(18).text(meta.title, 36, 24);
+  let y = drawPdfPageHeader(doc, meta, generatedAt, logoBuffer);
 
-  const now = new Date();
-  doc.fillColor("#0B1523").font("Helvetica").fontSize(10);
-  doc.text(
-    `Date Range (Gregorian): ${formatGregorianFromIso(meta.from)} to ${formatGregorianFromIso(meta.to)}`,
-    36,
-    88,
-  );
-  doc.text(
-    `Date Range (Solar): ${formatSolarFromIso(meta.from)} to ${formatSolarFromIso(meta.to)}`,
-    36,
-    102,
-  );
-  doc.text(
-    `Generated: ${formatGregorianDate(now)} ${formatTime(now)} | ${formatJalali(now, "yyyy/MM/dd HH:mm")}`,
-    36,
-    116,
-  );
+  const startNewPage = () => {
+    doc.addPage();
+    y = drawPdfPageHeader(doc, meta, generatedAt, logoBuffer);
+  };
 
-  doc.moveTo(36, 136).lineTo(doc.page.width - 36, 136).strokeColor("#D1D5DB").lineWidth(1).stroke();
+  if (sections.length === 0) {
+    doc.fillColor("#374151").font("Helvetica").fontSize(11);
+    doc.text("No attendance records for the selected range.", margin, y + 6);
+    y += 36;
+  }
 
-  const headerColumns = [
-    { label: "Date (G)", width: 78 },
-    { label: "Date (Sh)", width: 78 },
-    { label: "Username", width: 78 },
-    { label: "Full Name", width: 120 },
-    { label: "Check In", width: 58 },
-    { label: "Check Out", width: 58 },
-    { label: "Hours", width: 50 },
-  ];
-
-  const rowColumns: Array<{ key: PdfRowKey; width: number }> = [
-    { key: "dateGregorian", width: 78 },
-    { key: "dateSolar", width: 78 },
-    { key: "username", width: 78 },
-    { key: "fullName", width: 120 },
-    { key: "checkIn", width: 58 },
-    { key: "checkOut", width: 58 },
-    { key: "hoursLabel", width: 50 },
-  ];
-
-  let y = 154;
-  drawPdfTableHeader(doc, headerColumns, 36, y);
-  y += 24;
-
-  for (const row of rowsWithDates) {
-    if (y > doc.page.height - 80) {
-      doc.addPage();
-      y = 50;
-      drawPdfTableHeader(doc, headerColumns, 36, y);
-      y += 24;
+  for (const [sectionIndex, section] of sections.entries()) {
+    if (y + 40 > tableBottomLimit) {
+      startNewPage();
     }
 
-    drawPdfRow(doc, row, rowColumns, 36, y);
-    y += 22;
+    if (sectionIndex > 0) {
+      y += 8;
+    }
+
+    doc.fillColor("#0B1523").font("Helvetica-Bold").fontSize(12);
+    doc.text(`Report: ${section.displayName}`, margin, y);
+    y += 18;
+
+    if (section.username) {
+      doc.fillColor("#4B5563").font("Helvetica").fontSize(9);
+      doc.text(`Username: ${section.username}`, margin, y);
+      y += 14;
+    }
+
+    if (y + 26 > tableBottomLimit) {
+      startNewPage();
+    }
+
+    drawPdfTableHeader(doc, columns, tableStartX, y);
+    y += 24;
+
+    if (section.rows.length === 0) {
+      if (y + 24 > tableBottomLimit) {
+        startNewPage();
+        drawPdfTableHeader(doc, columns, tableStartX, y);
+        y += 24;
+      }
+
+      doc.rect(tableStartX, y, columns.reduce((sum, column) => sum + column.width, 0), 22)
+        .strokeColor("#E5E7EB")
+        .lineWidth(0.6)
+        .stroke();
+      doc.fillColor("#6B7280").font("Helvetica").fontSize(9);
+      doc.text("No attendance records.", tableStartX + 6, y + 6);
+      y += 24;
+    } else {
+      for (const [rowIndex, row] of section.rows.entries()) {
+        if (y + 22 > tableBottomLimit) {
+          startNewPage();
+          drawPdfTableHeader(doc, columns, tableStartX, y);
+          y += 24;
+        }
+
+        drawPdfTableRow(doc, row, columns, tableStartX, y, rowIndex % 2 === 1);
+        y += 22;
+      }
+    }
+
+    if (y + 26 > tableBottomLimit) {
+      startNewPage();
+    }
+
+    const sectionHours = computeHours(section.rows).toFixed(2);
+    doc.fillColor("#111827").font("Helvetica-Bold").fontSize(10);
+    doc.text(`User Total Hours: ${sectionHours}`, margin, y + 4);
+    y += 24;
   }
 
-  if (y > doc.page.height - 110) {
-    doc.addPage();
-    y = 50;
+  if (y + 58 > tableBottomLimit) {
+    startNewPage();
   }
 
-  doc.font("Helvetica-Bold").fontSize(11).fillColor("#09A752").text("Totals", 36, y + 12);
-  doc.font("Helvetica").fillColor("#111111").fontSize(10);
-  doc.text(`Hours: ${reportPayload.totals.hours.toFixed(2)}`, 36, y + 30);
-  doc.text(`Records: ${reportPayload.totals.records}`, 36, y + 44);
-  doc.text(`Users: ${reportPayload.totals.users}`, 36, y + 58);
+  doc.moveTo(margin, y + 6).lineTo(doc.page.width - margin, y + 6).strokeColor("#D1D5DB").stroke();
+  doc.fillColor("#0B1523").font("Helvetica-Bold").fontSize(11);
+  doc.text("Overall Totals", margin, y + 14);
 
-  doc.fontSize(9).fillColor("#6B7280").text(
-    `Clockwork OrangeHRM Desktop | ${new Date().toISOString()}`,
-    36,
-    doc.page.height - 36,
-    {
-      width: doc.page.width - 72,
-      align: "center",
-    },
-  );
+  doc.fillColor("#111827").font("Helvetica").fontSize(10);
+  doc.text(`Hours: ${reportPayload.totals.hours.toFixed(2)}`, margin, y + 30);
+  doc.text(`Records: ${reportPayload.totals.records}`, margin + 160, y + 30);
+  doc.text(`Users: ${reportPayload.totals.users}`, margin + 300, y + 30);
 
   doc.end();
   return done;

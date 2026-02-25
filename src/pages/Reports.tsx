@@ -2,7 +2,9 @@
 import {
   AlertCircle,
   Bot,
-  Download,
+  FileSpreadsheet,
+  FileText,
+  Files,
   LoaderCircle,
   RefreshCw,
   Search,
@@ -17,11 +19,14 @@ import { JalaliDatePicker } from "@/components/JalaliDatePicker";
 import { PageHelpButton } from "@/components/PageHelpButton";
 import {
   buildDateRange,
+  buildReportFilename,
   defaultRangeForPreset,
-  formatDate,
+  formatDateOnly,
   formatDateCompact,
   formatHours,
-  suggestedExportFilename,
+  formatShamsiDateOnly,
+  inferExportFormatFromPath,
+  resolveUserDisplayName,
 } from "@/lib/helpers";
 import {
   filterExistingMemberIds,
@@ -45,6 +50,24 @@ const USER_PAGE_SIZE = 30;
 
 type SelectionMode = "users" | "group";
 
+interface UserReportSection {
+  userId: string;
+  displayName: string;
+  rows: ReportRow[];
+  payload: ReportPayload;
+}
+
+function totalsForRows(rows: ReportRow[], fallbackUsers = 0): ReportPayload["totals"] {
+  const totalHours = rows.reduce((sum, row) => sum + row.hours, 0);
+  const uniqueUsers = new Set(rows.map((row) => row.userId));
+
+  return {
+    hours: Math.round(totalHours * 100) / 100,
+    records: rows.length,
+    users: uniqueUsers.size > 0 ? uniqueUsers.size : fallbackUsers,
+  };
+}
+
 export function Reports() {
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("users");
   const [users, setUsers] = useState<AppUser[]>([]);
@@ -58,8 +81,10 @@ export function Reports() {
   const [defaultCalendar, setDefaultCalendar] = useState<DateDisplayCalendar>("shamsi");
 
   const [report, setReport] = useState<ReportPayload | null>(null);
+  const [lastRunUserIds, setLastRunUserIds] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportProgressLabel, setExportProgressLabel] = useState("");
 
   const [exportFormat, setExportFormat] = useState<ExportFormat>("pdf");
   const [pythonAvailable, setPythonAvailable] = useState(false);
@@ -188,6 +213,14 @@ export function Reports() {
       .filter(Boolean) as AppUser[];
   }, [selectedUserIds, users]);
 
+  const usersById = useMemo(() => {
+    const byId = new Map<string, AppUser>();
+    for (const user of users) {
+      byId.set(getUserId(user), user);
+    }
+    return byId;
+  }, [users]);
+
   const selectedGroupMembers = useMemo(
     () => resolveGroupMembers(activeGroup, users),
     [activeGroup, users],
@@ -209,6 +242,50 @@ export function Reports() {
 
     return defaultRangeForPreset(datePreset);
   }, [customDateRange, datePreset]);
+
+  const reportSections = useMemo<UserReportSection[]>(() => {
+    if (!report) {
+      return [];
+    }
+
+    const rowsByUser = new Map<string, ReportRow[]>();
+    for (const row of report.rows) {
+      const existingRows = rowsByUser.get(row.userId);
+      if (existingRows) {
+        existingRows.push(row);
+      } else {
+        rowsByUser.set(row.userId, [row]);
+      }
+    }
+
+    const sourceUserIds =
+      lastRunUserIds.length > 0
+        ? lastRunUserIds
+        : Array.from(new Set(report.rows.map((row) => row.userId)));
+
+    return sourceUserIds.map((userId) => {
+      const userRows = rowsByUser.get(userId) ?? [];
+      const mappedUser = usersById.get(userId);
+      const sampleRow = userRows[0];
+      const displayName = mappedUser
+        ? resolveUserDisplayName(mappedUser)
+        : sampleRow
+          ? resolveUserDisplayName(sampleRow)
+          : userId;
+
+      const payload: ReportPayload = {
+        rows: userRows,
+        totals: totalsForRows(userRows, 1),
+      };
+
+      return {
+        userId,
+        displayName,
+        rows: userRows,
+        payload,
+      };
+    });
+  }, [lastRunUserIds, report, usersById]);
 
   const toggleUserSelection = (memberId: string) => {
     setSelectedUserIds((current) => {
@@ -262,18 +339,21 @@ export function Reports() {
       setSelectedUserIds(validIds);
     }
 
+    const resolvedUserIds =
+      selectionMode === "group"
+        ? filterExistingMemberIds(finalIds, users)
+        : finalIds;
+
     setRunning(true);
     setSummary(null);
 
     try {
       const result = await apiClient.runReport({
-        userIds:
-          selectionMode === "group"
-            ? filterExistingMemberIds(finalIds, users)
-            : finalIds,
+        userIds: resolvedUserIds,
         dateRange: buildDateRange(datePreset, customDateRange),
       });
       setReport(result);
+      setLastRunUserIds(resolvedUserIds);
       toast.success(`Report generated (${result.rows.length} rows).`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to run report");
@@ -282,28 +362,124 @@ export function Reports() {
     }
   };
 
-  const handleExport = async () => {
+  const reportTitle =
+    datePreset === "payroll-cycle"
+      ? "Clockwork Payroll Orbit Report (Madar-e Hoghooghi 26-25)"
+      : "Clockwork Attendance Report";
+
+  const buildUserDisplayMap = (): Record<string, string> => {
+    const pairs = reportSections.map((section) => [section.userId, section.displayName] as const);
+    return Object.fromEntries(pairs);
+  };
+
+  const exportPayloadToSelectedPath = async (
+    payload: ReportPayload,
+    format: ExportFormat,
+    defaultPath: string,
+    meta: {
+      userDisplayName?: string;
+      userDisplayMap?: Record<string, string>;
+    } = {},
+  ) => {
+    const saveDialog = await window.clockwork.openSaveDialog({
+      title: "Save report export",
+      defaultPath,
+      filters: [
+        {
+          name: format.toUpperCase(),
+          extensions: [format],
+        },
+      ],
+    });
+
+    if (saveDialog.canceled || !saveDialog.filePath) {
+      return null;
+    }
+
+    const normalizedPath = saveDialog.filePath.toLowerCase().endsWith(`.${format}`)
+      ? saveDialog.filePath
+      : `${saveDialog.filePath}.${format}`;
+
+    await apiClient.exportReport({
+      format,
+      reportPayload: payload,
+      meta: {
+        title: reportTitle,
+        from: effectiveRange.from,
+        to: effectiveRange.to,
+        ...meta,
+      },
+      savePath: normalizedPath,
+    });
+
+    window.dispatchEvent(
+      new CustomEvent("clockwork:export-created", {
+        detail: {
+          filePath: normalizedPath,
+          format,
+        },
+      }),
+    );
+
+    return normalizedPath;
+  };
+
+  const exportSection = async (
+    section: UserReportSection,
+    format: ExportFormat,
+  ) => {
+    setExporting(true);
+    setExportProgressLabel("");
+
+    try {
+      const defaultPath = buildReportFilename({
+        format,
+        from: effectiveRange.from,
+        to: effectiveRange.to,
+        displayName: section.displayName,
+      });
+
+      const exportedPath = await exportPayloadToSelectedPath(
+        section.payload,
+        format,
+        defaultPath,
+        { userDisplayName: section.displayName },
+      );
+
+      if (exportedPath) {
+        toast.success(`Exported ${format.toUpperCase()} for ${section.displayName}`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Export failed");
+    } finally {
+      setExporting(false);
+      setExportProgressLabel("");
+    }
+  };
+
+  const handleExportMergedAll = async () => {
     if (!report) {
       return;
     }
 
     setExporting(true);
+    setExportProgressLabel("Preparing merged export...");
 
     try {
-      const defaultPath = suggestedExportFilename(
-        exportFormat,
-        effectiveRange.from,
-        effectiveRange.to,
-      );
+      const defaultPath = buildReportFilename({
+        format: exportFormat,
+        from: effectiveRange.from,
+        to: effectiveRange.to,
+        merged: reportSections.length > 1,
+        userCount: reportSections.length,
+      });
 
       const saveDialog = await window.clockwork.openSaveDialog({
-        title: "Save report export",
+        title: "Save merged report export",
         defaultPath,
         filters: [
-          {
-            name: exportFormat.toUpperCase(),
-            extensions: [exportFormat],
-          },
+          { name: "PDF", extensions: ["pdf"] },
+          { name: "CSV", extensions: ["csv"] },
         ],
       });
 
@@ -311,34 +487,49 @@ export function Reports() {
         return;
       }
 
-      await apiClient.exportReport({
-        format: exportFormat,
-        reportPayload: report,
-        meta: {
-          title:
-            datePreset === "payroll-cycle"
-              ? "Clockwork Payroll Orbit Report (Madar-e Hoghooghi 26-25)"
-              : "Clockwork Attendance Report",
-          from: effectiveRange.from,
-          to: effectiveRange.to,
-        },
-        savePath: saveDialog.filePath,
-      });
+      const selectedFormat = inferExportFormatFromPath(saveDialog.filePath, exportFormat);
+      const normalizedPath = saveDialog.filePath.toLowerCase().endsWith(`.${selectedFormat}`)
+        ? saveDialog.filePath
+        : `${saveDialog.filePath}.${selectedFormat}`;
 
-      window.dispatchEvent(
-        new CustomEvent("clockwork:export-created", {
-          detail: {
-            filePath: saveDialog.filePath,
-            format: exportFormat,
-          },
-        }),
-      );
-      toast.success(`Exported ${exportFormat.toUpperCase()} to ${saveDialog.filePath}`);
+      await exportMergedToPath(selectedFormat, normalizedPath);
+      toast.success(`Exported merged ${selectedFormat.toUpperCase()} to ${normalizedPath}`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Export failed");
+      toast.error(error instanceof Error ? error.message : "Merged export failed");
     } finally {
       setExporting(false);
+      setExportProgressLabel("");
     }
+  };
+
+  const exportMergedToPath = async (
+    format: ExportFormat,
+    savePath: string,
+  ) => {
+    if (!report) {
+      return;
+    }
+
+    await apiClient.exportReport({
+      format,
+      reportPayload: report,
+      meta: {
+        title: reportTitle,
+        from: effectiveRange.from,
+        to: effectiveRange.to,
+        userDisplayMap: buildUserDisplayMap(),
+      },
+      savePath,
+    });
+
+    window.dispatchEvent(
+      new CustomEvent("clockwork:export-created", {
+        detail: {
+          filePath: savePath,
+          format,
+        },
+      }),
+    );
   };
 
   const handlePythonSummary = async () => {
@@ -714,33 +905,20 @@ export function Reports() {
 
               {report ? (
                 <>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant={exportFormat === "pdf" ? "primary" : "secondary"}
-                      onClick={() => setExportFormat("pdf")}
-                    >
-                      PDF
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={exportFormat === "csv" ? "primary" : "secondary"}
-                      onClick={() => setExportFormat("csv")}
-                    >
-                      CSV
-                    </Button>
-                  </div>
-
-                  <Button variant="secondary" onClick={handleExport} disabled={exporting}>
+                  <Button
+                    variant="secondary"
+                    onClick={handleExportMergedAll}
+                    disabled={exporting || reportSections.length === 0}
+                  >
                     {exporting ? (
                       <>
                         <LoaderCircle className="h-4 w-4 animate-spin" />
-                        Exporting...
+                        {exportProgressLabel || "Exporting..."}
                       </>
                     ) : (
                       <>
-                        <Download className="h-4 w-4" />
-                        Export
+                        <Files className="h-4 w-4" />
+                        Export All (Merged)
                       </>
                     )}
                   </Button>
@@ -753,77 +931,99 @@ export function Reports() {
 
       {report ? (
         <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <Card>
-              <CardContent>
-                <p className="text-sm text-[var(--clockwork-gray-600)]">Total Hours</p>
-                <p className="text-2xl font-semibold text-[var(--clockwork-gray-900)]">
-                  {formatHours(report.totals.hours)}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent>
-                <p className="text-sm text-[var(--clockwork-gray-600)]">Records</p>
-                <p className="text-2xl font-semibold text-[var(--clockwork-gray-900)]">
-                  {report.totals.records}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent>
-                <p className="text-sm text-[var(--clockwork-gray-600)]">Users</p>
-                <p className="text-2xl font-semibold text-[var(--clockwork-gray-900)]">
-                  {report.totals.users}
-                </p>
-              </CardContent>
-            </Card>
+          <div className="space-y-4">
+            {reportSections.map((section) => (
+              <Card key={`report-section-${section.userId}`}>
+                <CardHeader>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-2">
+                      <CardTitle>{`Report: ${section.displayName}`}</CardTitle>
+                      <div className="flex flex-wrap gap-3 text-xs text-[var(--clockwork-gray-600)]">
+                        <span>
+                          Total Hours:{" "}
+                          <strong className="text-[var(--clockwork-gray-900)]">
+                            {formatHours(section.payload.totals.hours)}
+                          </strong>
+                        </span>
+                        <span>
+                          Records:{" "}
+                          <strong className="text-[var(--clockwork-gray-900)]">
+                            {section.payload.totals.records}
+                          </strong>
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onClick={() => void exportSection(section, "pdf")}
+                        disabled={exporting}
+                      >
+                        <FileText className="h-4 w-4" />
+                        PDF
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        className="bg-[var(--clockwork-green)] hover:bg-[var(--clockwork-green-hover)] focus:ring-[var(--clockwork-green)]"
+                        onClick={() => void exportSection(section, "csv")}
+                        disabled={exporting}
+                      >
+                        <FileSpreadsheet className="h-4 w-4" />
+                        CSV
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <DataTable<ReportRow>
+                    data={section.rows}
+                    emptyMessage="No attendance records for this user in the selected range."
+                    getRowKey={(row) => `${row.userId}-${row.date}-${row.checkIn}`}
+                    columns={[
+                      {
+                        key: "date-shamsi",
+                        header: "Shamsi",
+                        render: (row) => formatShamsiDateOnly(row.date),
+                      },
+                      {
+                        key: "date-gregorian",
+                        header: "Gregorian",
+                        render: (row) => formatDateOnly(row.date),
+                      },
+                      {
+                        key: "username",
+                        header: "Username",
+                        render: (row) => row.username,
+                      },
+                      {
+                        key: "fullName",
+                        header: "Full Name",
+                        render: (row) => row.fullName,
+                      },
+                      {
+                        key: "checkIn",
+                        header: "Check In",
+                        render: (row) => row.checkIn || "-",
+                      },
+                      {
+                        key: "checkOut",
+                        header: "Check Out",
+                        render: (row) => row.checkOut || "Missing",
+                      },
+                      {
+                        key: "hours",
+                        header: "Hours",
+                        align: "right",
+                        render: (row) => row.hours.toFixed(2),
+                      },
+                    ]}
+                  />
+                </CardContent>
+              </Card>
+            ))}
           </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Report Results</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <DataTable<ReportRow>
-                data={report.rows}
-                getRowKey={(row) => `${row.userId}-${row.date}-${row.checkIn}`}
-                columns={[
-                  {
-                    key: "date",
-                    header: "Date",
-                    render: (row) => formatDate(row.date, defaultCalendar),
-                  },
-                  {
-                    key: "username",
-                    header: "Username",
-                    render: (row) => row.username,
-                  },
-                  {
-                    key: "fullName",
-                    header: "Full Name",
-                    render: (row) => row.fullName,
-                  },
-                  {
-                    key: "checkIn",
-                    header: "Check In",
-                    render: (row) => row.checkIn || "-",
-                  },
-                  {
-                    key: "checkOut",
-                    header: "Check Out",
-                    render: (row) => row.checkOut || "Missing",
-                  },
-                  {
-                    key: "hours",
-                    header: "Hours",
-                    align: "right",
-                    render: (row) => row.hours.toFixed(2),
-                  },
-                ]}
-              />
-            </CardContent>
-          </Card>
 
           <Card>
             <CardHeader>
@@ -869,7 +1069,7 @@ export function Reports() {
                       <ul className="space-y-1 text-sm text-[var(--clockwork-gray-700)]">
                         {summary.anomalies.map((item) => (
                           <li key={`${item.username}-${item.date}`}>
-                            {item.username} on {formatDate(item.date, defaultCalendar)}:{" "}
+                            {item.username} on {formatShamsiDateOnly(item.date)}:{" "}
                             {item.hours.toFixed(2)} hrs
                           </li>
                         ))}
@@ -886,6 +1086,7 @@ export function Reports() {
           </Card>
         </>
       ) : null}
+
     </div>
   );
 }

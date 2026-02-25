@@ -11,10 +11,19 @@ export interface SaveDialogRequest {
   filters?: SaveDialogFilters[];
 }
 
+export interface OpenDirectoryDialogRequest {
+  title?: string;
+  defaultPath?: string;
+}
+
 const api = {
   getApiBaseUrl: (): Promise<string> => ipcRenderer.invoke("clockwork:get-api-base-url"),
   openSaveDialog: (options?: SaveDialogRequest): Promise<{ canceled: boolean; filePath?: string }> =>
     ipcRenderer.invoke("clockwork:open-save-dialog", options),
+  openDirectoryDialog: (
+    options?: OpenDirectoryDialogRequest,
+  ): Promise<{ canceled: boolean; filePaths: string[] }> =>
+    ipcRenderer.invoke("clockwork:open-directory-dialog", options),
   showItemInFolder: (filePath: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke("clockwork:show-item-in-folder", filePath),
   openExternal: (url: string): Promise<{ ok: boolean }> =>

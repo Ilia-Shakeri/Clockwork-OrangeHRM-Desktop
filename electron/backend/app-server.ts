@@ -16,11 +16,13 @@ import { buildCsv, buildPdf } from "./exporters";
 import { PythonEnhancer } from "./python";
 import {
   addExportHistory,
+  clearExportHistory,
   type ConfigStore,
   getConnection,
   getExportHistory,
   getSettings,
   getUserGroups,
+  removeExportHistoryByIds,
   replaceUserGroups,
   saveConnection,
   updateSettings,
@@ -227,8 +229,14 @@ const exportSchema = z.object({
     title: z.string().min(1),
     from: z.string().min(1),
     to: z.string().min(1),
+    userDisplayName: z.string().trim().min(1).optional(),
+    userDisplayMap: z.record(z.string(), z.string().trim().min(1)).optional(),
   }),
   savePath: z.string().min(1),
+});
+
+const exportHistoryDeleteSchema = z.object({
+  ids: z.array(z.string().trim().min(1)).max(500),
 });
 
 interface StartApiServerOptions {
@@ -236,6 +244,7 @@ interface StartApiServerOptions {
   appVersion: string;
   isDev: boolean;
   pythonScriptPath: string;
+  mainLogoPath?: string;
   logger?: (message: string, details?: unknown) => void;
 }
 
@@ -491,7 +500,9 @@ export async function startLocalApiServer(
       const content =
         parsed.format === "csv"
           ? buildCsv(parsed.reportPayload, parsed.meta)
-          : await buildPdf(parsed.reportPayload, parsed.meta);
+          : await buildPdf(parsed.reportPayload, parsed.meta, {
+              logoPath: options.mainLogoPath,
+            });
 
       await fs.writeFile(savePath, content);
 
@@ -521,6 +532,26 @@ export async function startLocalApiServer(
   api.get("/api/exports/history", (_req, res) => {
     res.json({
       history: getExportHistory(options.store),
+    });
+  });
+
+  api.post(
+    "/api/exports/history/delete",
+    createRouteHandler(async (req, res) => {
+      const parsed = exportHistoryDeleteSchema.parse(req.body);
+      const history = removeExportHistoryByIds(options.store, parsed.ids);
+      res.json({
+        ok: true,
+        history,
+      });
+    }),
+  );
+
+  api.delete("/api/exports/history", (_req, res) => {
+    const history = clearExportHistory(options.store);
+    res.json({
+      ok: true,
+      history,
     });
   });
 

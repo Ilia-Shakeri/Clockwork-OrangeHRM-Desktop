@@ -3,6 +3,42 @@
 @import './theme.css';
 @import './clockwork-theme.css';
 
+:root {
+  --clockwork-scrollbar-track: #0f0f0f;
+  --clockwork-scrollbar-thumb: #4a4a4a;
+  --clockwork-scrollbar-thumb-hover: #666666;
+}
+
+.dark {
+  --clockwork-scrollbar-track: #0b0b0b;
+  --clockwork-scrollbar-thumb: #4f4f4f;
+  --clockwork-scrollbar-thumb-hover: #6a6a6a;
+}
+
+* {
+  scrollbar-color: var(--clockwork-scrollbar-thumb) var(--clockwork-scrollbar-track);
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--clockwork-scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--clockwork-scrollbar-thumb);
+  border-radius: 9999px;
+  border: 2px solid var(--clockwork-scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--clockwork-scrollbar-thumb-hover);
+}
+
 .app-drag-region {
   -webkit-app-region: drag;
 }

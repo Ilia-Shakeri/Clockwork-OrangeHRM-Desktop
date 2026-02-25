@@ -7,11 +7,19 @@ import {
   newDate as newJalaliDate,
 } from "date-fns-jalali";
 import type {
+  AppUser,
   DateDisplayCalendar,
   DateRangeInput,
   DateRangePreset,
   ExportFormat,
+  ReportRow,
 } from "@/types/api";
+
+const HIJRI_DATE_FORMATTER = new Intl.DateTimeFormat("en-u-ca-islamic", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 
 export function toIsoDate(value: Date): string {
   const year = value.getFullYear();
@@ -209,11 +217,141 @@ export function formatHours(value: number): string {
   return `${value.toFixed(2)} hrs`;
 }
 
+export function formatDateOnly(value: string): string {
+  const parsed = parseIsoDate(value);
+  return parsed ? toIsoDate(parsed) : value;
+}
+
+export function formatShamsiDateOnly(value: string): string {
+  const parsed = parseIsoDate(value);
+  return parsed ? formatJalali(parsed, "yyyy-MM-dd") : value;
+}
+
+export function formatHijriDateOnly(value: string): string {
+  const parsed = parseIsoDate(value);
+  if (!parsed) {
+    return value;
+  }
+
+  try {
+    const parts = HIJRI_DATE_FORMATTER.formatToParts(parsed);
+    const year = parts.find((part) => part.type === "year")?.value;
+    const month = parts.find((part) => part.type === "month")?.value;
+    const day = parts.find((part) => part.type === "day")?.value;
+
+    if (!year || !month || !day) {
+      return value;
+    }
+
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  } catch {
+    return value;
+  }
+}
+
+function normalizeNamePart(value: string | undefined | null): string {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function isMeaningfulName(value: string): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const lowered = value.toLowerCase();
+  return lowered !== "unknown" && lowered !== "n/a" && lowered !== "-";
+}
+
+export function resolveUserDisplayName(
+  source:
+    | Pick<AppUser, "fullName" | "username" | "email" | "id">
+    | Pick<ReportRow, "fullName" | "username" | "userId">,
+): string {
+  const fullName = normalizeNamePart(source.fullName);
+  if (isMeaningfulName(fullName)) {
+    return fullName;
+  }
+
+  const username = normalizeNamePart(source.username);
+  if (isMeaningfulName(username)) {
+    return username;
+  }
+
+  if ("email" in source) {
+    const email = normalizeNamePart(source.email);
+    if (isMeaningfulName(email)) {
+      return email;
+    }
+  }
+
+  if ("id" in source) {
+    return normalizeNamePart(String(source.id)) || "user";
+  }
+
+  return normalizeNamePart(source.userId) || "user";
+}
+
+export function sanitizeWindowsFilename(value: string, maxLength = 80): string {
+  const sanitized = value
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "")
+    .trim();
+
+  let next = sanitized || "report";
+
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(next)) {
+    next = `file_${next}`;
+  }
+
+  if (next.length > maxLength) {
+    next = next.slice(0, maxLength).trim();
+  }
+
+  return next || "report";
+}
+
+export function buildReportFilename(input: {
+  format: ExportFormat;
+  from: string;
+  to: string;
+  displayName?: string;
+  merged?: boolean;
+  userCount?: number;
+}): string {
+  const from = formatDateOnly(input.from);
+  const to = formatDateOnly(input.to);
+  const range = `${from}_to_${to}`;
+
+  if (input.merged && (input.userCount ?? 0) > 1) {
+    return `reports_${input.userCount}users_${range}.${input.format}`;
+  }
+
+  const displayName = sanitizeWindowsFilename(input.displayName || "user");
+  return `report_${displayName}_${range}.${input.format}`;
+}
+
+export function inferExportFormatFromPath(
+  filePath: string,
+  fallback: ExportFormat = "pdf",
+): ExportFormat {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith(".csv")) {
+    return "csv";
+  }
+
+  if (lower.endsWith(".pdf")) {
+    return "pdf";
+  }
+
+  return fallback;
+}
+
 export function suggestedExportFilename(
   format: ExportFormat,
   from: string,
   to: string,
 ): string {
   const timestamp = new Date().toISOString().replace(/[:T-]/g, "").slice(0, 14);
-  return `clockwork_report_${from}_to_${to}_${timestamp}.${format}`;
+  return `clockwork_report_${formatDateOnly(from)}_to_${formatDateOnly(to)}_${timestamp}.${format}`;
 }
