@@ -6,7 +6,11 @@ import { randomUUID } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
 import { z } from "zod";
-import { MySqlConnectionService } from "./db";
+import {
+  createDbClient,
+  defaultPortForEngine,
+  DEFAULT_SQLITE_PATH,
+} from "./db/index";
 import type { PresencePayload, ReportPayload } from "./dtos";
 import { buildCsv, buildPdf } from "./exporters";
 import { PythonEnhancer } from "./python";
@@ -20,13 +24,82 @@ import {
   updateSettings,
 } from "./store";
 
-const connectionSchema = z.object({
-  host: z.string().min(1, "Host is required"),
-  port: z.coerce.number().int().min(1).max(65535),
-  user: z.string().min(1, "User is required"),
-  password: z.string(),
-  database: z.string().min(1, "Database is required"),
-});
+const dbEngineSchema = z.enum(["mariadb", "mysql", "postgres", "sqlite"]);
+
+const connectionSchema = z
+  .object({
+    engine: dbEngineSchema.default("mariadb"),
+    host: z.string().trim().default("127.0.0.1"),
+    port: z.coerce.number().int().min(0).max(65535).optional(),
+    user: z.string().trim().default(""),
+    password: z.string().default(""),
+    database: z.string().trim().default(""),
+    ssl: z
+      .union([z.boolean(), z.literal("true"), z.literal("false")])
+      .optional()
+      .transform((value) => value === true || value === "true")
+      .default(false),
+    sqlitePath: z.string().trim().default(DEFAULT_SQLITE_PATH),
+  })
+  .superRefine((value, context) => {
+    if (value.engine === "sqlite") {
+      if (!value.sqlitePath) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "SQLite path is required.",
+          path: ["sqlitePath"],
+        });
+      }
+
+      return;
+    }
+
+    if (!value.host) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Host is required.",
+        path: ["host"],
+      });
+    }
+
+    const resolvedPort = value.port ?? defaultPortForEngine(value.engine);
+    if (resolvedPort < 1 || resolvedPort > 65535) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Port must be between 1 and 65535.",
+        path: ["port"],
+      });
+    }
+
+    if (!value.user) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "User is required.",
+        path: ["user"],
+      });
+    }
+
+    if (!value.database) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Database is required.",
+        path: ["database"],
+      });
+    }
+  })
+  .transform((value) => ({
+    engine: value.engine,
+    host: value.host || "127.0.0.1",
+    port:
+      value.engine === "sqlite"
+        ? 0
+        : value.port ?? defaultPortForEngine(value.engine),
+    user: value.user,
+    password: value.password,
+    database: value.database,
+    ssl: value.ssl,
+    sqlitePath: value.sqlitePath || DEFAULT_SQLITE_PATH,
+  }));
 
 const settingsSchema = z.object({
   theme: z.enum(["light", "dark"]),
@@ -190,7 +263,7 @@ export async function startLocalApiServer(
     });
   }
 
-  const dbService = new MySqlConnectionService((message, details) => {
+  const dbService = createDbClient((message, details) => {
     logger(message, details);
   });
   await dbService.initialize(getConnection(options.store));
@@ -198,13 +271,33 @@ export async function startLocalApiServer(
   const python = new PythonEnhancer(options.pythonScriptPath);
   python.detect();
 
-  api.get("/api/health", (_req, res) => {
-    res.json({
-      ok: true,
-      version: options.appVersion,
-      uptime: Number(process.uptime().toFixed(3)),
-    });
-  });
+  api.get(
+    "/api/health",
+    createRouteHandler(async (_req, res) => {
+      const connectionInfo = dbService.getConnectionInfo();
+      let latencyMs: number | null = null;
+
+      if (connectionInfo) {
+        const startedAt = Date.now();
+        try {
+          await dbService.ping();
+          latencyMs = Math.max(1, Date.now() - startedAt);
+        } catch (error) {
+          logger("Database ping failed", error);
+          latencyMs = null;
+        }
+      }
+
+      res.json({
+        ok: true,
+        version: options.appVersion,
+        uptime: Number(process.uptime().toFixed(3)),
+        engine: connectionInfo?.engine ?? null,
+        dbName: connectionInfo?.dbName ?? null,
+        latencyMs,
+      });
+    }),
+  );
 
   api.get("/api/settings", (_req, res) => {
     res.json({

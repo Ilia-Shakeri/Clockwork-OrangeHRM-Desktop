@@ -2,13 +2,17 @@ export type DateRangePreset = "current" | "last" | "payroll-cycle" | "custom";
 export type ExportFormat = "pdf" | "csv";
 export type BulkScanMode = "combined" | "per-user";
 export type DateDisplayCalendar = "gregorian" | "shamsi";
+export type DatabaseEngine = "mariadb" | "mysql" | "postgres" | "sqlite";
 
 export interface ConnectionPayload {
+  engine: DatabaseEngine;
   host: string;
   port: number;
   user: string;
   password: string;
   database: string;
+  ssl: boolean;
+  sqlitePath: string;
 }
 
 export interface UiSettings {
@@ -112,6 +116,9 @@ export interface HealthResponse {
   ok: true;
   version: string;
   uptime: number;
+  engine: DatabaseEngine | null;
+  dbName: string | null;
+  latencyMs: number | null;
 }
 
 export interface PythonStatusResponse {

@@ -76,7 +76,11 @@ export function Dashboard() {
               {settings?.connection ? "Configured" : "Missing"}
             </p>
             <p className="mt-1 text-xs text-[var(--clockwork-gray-500)]">
-              {settings?.connection ? settings.connection.host : "Open Connections to set MySQL"}
+              {settings?.connection
+                ? settings.connection.engine === "sqlite"
+                  ? settings.connection.sqlitePath
+                  : `${settings.connection.engine} @ ${settings.connection.host}`
+                : "Open Connections to configure database access"}
             </p>
           </CardContent>
         </Card>
@@ -119,7 +123,7 @@ export function Dashboard() {
             <Link to="/connections" className="rounded-lg border border-[var(--clockwork-border)] p-4 hover:border-[var(--clockwork-orange)]">
               <Cable className="mb-3 h-6 w-6 text-[var(--clockwork-orange)]" />
               <p className="font-semibold text-[var(--clockwork-gray-900)]">Configure Connection</p>
-              <p className="text-sm text-[var(--clockwork-gray-600)]">Test and persist MySQL settings</p>
+              <p className="text-sm text-[var(--clockwork-gray-600)]">Test and persist database settings</p>
             </Link>
             <Link to="/presence" className="rounded-lg border border-[var(--clockwork-border)] p-4 hover:border-[var(--clockwork-green)]">
               <Users className="mb-3 h-6 w-6 text-[var(--clockwork-green)]" />

@@ -5,7 +5,11 @@ Desktop attendance reporting and export tool for OrangeHRM, built with Electron 
 ## Features
 - Secure desktop app shell with custom window controls
 - Local embedded API for settings, user lookup, reporting, exports, and live presence
-- MySQL connection management and credential persistence on local machine
+- Multi-database connectivity with engine adapters:
+  - MariaDB (default)
+  - MySQL
+  - PostgreSQL
+  - SQLite (file-based)
 - Attendance reports with preset/custom date ranges (including payroll-cycle 26-25)
 - Solar and Gregorian date display support
 - Bulk username scan and batch report execution
@@ -19,7 +23,9 @@ Desktop attendance reporting and export tool for OrangeHRM, built with Electron 
 - Vite
 - Tailwind CSS
 - Express (embedded local API)
-- MySQL (`mysql2`)
+- `mysql2` (MariaDB/MySQL)
+- `pg` (PostgreSQL)
+- `node:sqlite` (SQLite, built into Node.js runtime)
 - `electron-store`
 - `zod`
 - `pdfkit`
@@ -29,7 +35,7 @@ Desktop attendance reporting and export tool for OrangeHRM, built with Electron 
 - Node.js 22.x (recommended to match CI)
 - npm 10+
 - Windows (primary target)
-- Access to an OrangeHRM MySQL database
+- Access to an OrangeHRM-compatible database (MariaDB/MySQL/PostgreSQL)
 - Python (optional, only for summary generation)
 
 ## Installation
@@ -50,14 +56,29 @@ cp .env.example .env
 Available values:
 - `NODE_ENV`: runtime mode
 - `VITE_DEV_SERVER_URL`: renderer dev server URL
-- `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`: optional local defaults
+- `DB_ENGINE`: `mariadb` | `mysql` | `postgres` | `sqlite` (default: `mariadb`)
+- `DB_HOST`: database host (default `127.0.0.1`)
+- `DB_PORT`: database port (defaults by engine: `3306` for mariadb/mysql, `5432` for postgres)
+- `DB_USER`: database username
+- `DB_PASSWORD`: database password
+- `DB_NAME`: database name
+- `DB_SSL`: `true` or `false`
+- `SQLITE_PATH`: SQLite file path (default `./data/app.db`)
 
-Primary runtime connection/settings are managed from the app UI and persisted with `electron-store`.
+The active runtime connection is managed from the app UI and persisted with `electron-store`.
 
-### Database setup
+### Database setup in app
 1. Open **Connections** page.
-2. Enter host, port, user, password, and database.
-3. Click **Test Connection and Save**.
+2. Select **Database Engine**.
+3. Fill engine-specific fields:
+   - MariaDB/MySQL/PostgreSQL: host, port, user, password, database, SSL.
+   - SQLite: file path.
+4. Click **Test Connection and Save**.
+
+### Database compatibility note
+- OrangeHRM schemas are primarily used with MariaDB/MySQL.
+- PostgreSQL and SQLite adapters are implemented with equivalent query behavior and payload normalization.
+- SQLite is best for lightweight or custom deployments and may require schema alignment if your source data differs.
 
 ## Development
 ```bash
@@ -88,6 +109,7 @@ npm run build:installer
 - `npm run build:renderer`: production renderer build
 - `npm run build:electron`: production Electron build
 - `npm run build`: typecheck + renderer build + Electron build
+- `npm run db:check`: compile Electron backend and run DB connectivity smoke check from current env
 - `npm run build:installer`: create Windows installer
 - `npm run lint`: TypeScript no-emit check for renderer project
 
@@ -101,6 +123,14 @@ npm run build:installer
 - Express server bound to `127.0.0.1` on dynamic port
 - Handles settings, DB connection, users, reports, presence, export, python summary
 - Uses `zod` for input/output validation
+- Routes all database operations through `createDbClient()` with engine adapters
+
+### Database Layer (`electron/backend/db/`)
+- `index.ts`: adapter factory + unified client
+- `mysql-mariadb.ts`: MariaDB/MySQL implementation
+- `postgres.ts`: PostgreSQL implementation
+- `sqlite.ts`: SQLite implementation
+- `query-builders/dialect.ts`: SQL dialect helpers for date/time/concat/like/pagination
 
 ### Renderer (`src/`)
 - React app rendered through hash router
@@ -110,13 +140,15 @@ npm run build:installer
 ### Data Flow
 1. Renderer sends API request via `apiClient`.
 2. Request goes to local Express API in Electron main process.
-3. Backend validates input, queries MySQL, and returns normalized payload.
+3. Backend validates input, executes DB adapter queries, and returns normalized payloads.
 4. Renderer displays results and supports export/save flows via preload IPC.
 
 ## Troubleshooting (Windows)
 - If `npm ci` or `npm install` fails, remove `node_modules` and retry.
 - If Electron does not start in dev mode, ensure port `5317` is available.
-- If database calls fail, re-check credentials and MySQL network access.
+- If database calls fail, re-check selected engine and credentials from **Connections**.
+- For PostgreSQL SSL environments, set `DB_SSL=true` (or toggle SSL in Connections).
+- If SQLite fails to open, verify the configured path and folder permissions.
 - If installer build fails, ensure build tools and permissions are available.
 - If Python summary is unavailable, install Python and verify PATH.
 

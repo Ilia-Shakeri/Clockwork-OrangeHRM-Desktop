@@ -5,6 +5,7 @@ import type {
   PersistedState,
   UiSettings,
 } from "./dtos";
+import { normalizeConnectionPayload } from "./db/index";
 
 export interface ConfigStore {
   get<Key extends keyof PersistedState>(key: Key): PersistedState[Key];
@@ -69,7 +70,17 @@ export function getSettings(store: ConfigStore): UiSettings {
 export function getConnection(
   store: ConfigStore,
 ): ConnectionPayload | null {
-  return store.get("connection");
+  const raw = store.get("connection") as
+    | ConnectionPayload
+    | Partial<ConnectionPayload>
+    | null;
+  const normalized = normalizeConnectionPayload(raw);
+
+  if (JSON.stringify(raw) !== JSON.stringify(normalized)) {
+    store.set("connection", normalized);
+  }
+
+  return normalized;
 }
 
 export function updateSettings(
@@ -85,7 +96,8 @@ export function saveConnection(
   store: ConfigStore,
   connection: ConnectionPayload,
 ): void {
-  store.set("connection", connection);
+  const normalized = normalizeConnectionPayload(connection);
+  store.set("connection", normalized);
 }
 
 export function getExportHistory(
