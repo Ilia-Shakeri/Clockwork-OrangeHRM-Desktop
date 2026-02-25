@@ -2,8 +2,9 @@ import {
   Github,
   Instagram,
   Linkedin,
+  Mail,
   Send,
-  Twitter,
+  X,
   type LucideIcon,
 } from "lucide-react";
 
@@ -31,11 +32,11 @@ export const socialLinks: SocialLinkItem[] = [
     handle: "@ilia-shakeri",
   },
   {
-    id: "instagram",
-    label: "Instagram",
-    url: "https://www.instagram.com/_.ilia.sh._?igsh=MWllZHo3anB5enFpbA%3D%3D&utm_source=qr",
-    icon: Instagram,
-    handle: "@_.ilia.sh._",
+    id: "gmail",
+    label: "Gmail",
+    url: "mailto:iliashkr@gmail.com",
+    icon: Mail,
+    handle: "iliashkr@gmail.com",
   },
   {
     id: "telegram",
@@ -46,9 +47,16 @@ export const socialLinks: SocialLinkItem[] = [
   },
   {
     id: "x",
-    label: "X (Twitter)",
+    label: "X",
     url: "https://x.com/CodeByIlia",
-    icon: Twitter,
+    icon: X,
     handle: "@CodeByIlia",
+  },
+  {
+    id: "instagram",
+    label: "Instagram",
+    url: "https://www.instagram.com/_.ilia.sh._?igsh=MWllZHo3anB5enFpbA%3D%3D&utm_source=qr",
+    icon: Instagram,
+    handle: "@_.ilia.sh._",
   },
 ];

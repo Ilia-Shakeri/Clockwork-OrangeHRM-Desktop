@@ -111,7 +111,10 @@ export function About() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Social Links</CardTitle>
+          <CardTitle className="text-base font-medium text-[var(--clockwork-gray-700)]">
+            You can support my work, explore my other projects, and stay in touch with me on these
+            platforms.
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
