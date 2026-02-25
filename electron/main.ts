@@ -13,6 +13,7 @@ const IPC_CHANNELS = {
   getApiBaseUrl: "clockwork:get-api-base-url",
   openSaveDialog: "clockwork:open-save-dialog",
   showItemInFolder: "clockwork:show-item-in-folder",
+  openExternal: "clockwork:open-external",
   windowMinimize: "clockwork:window-minimize",
   windowToggleMaximize: "clockwork:window-toggle-maximize",
   windowClose: "clockwork:window-close",
@@ -60,6 +61,19 @@ function registerIpcHandlers(): void {
 
     shell.showItemInFolder(filePath);
     return { ok: true };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.openExternal, async (_event, url: string) => {
+    if (!url) {
+      return { ok: false };
+    }
+
+    try {
+      await shell.openExternal(url);
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.windowMinimize, async () => {

@@ -3,6 +3,8 @@ import { Layout } from "@/components/Layout";
 import { Dashboard } from "@/pages/Dashboard";
 import { Reports } from "@/pages/Reports";
 import { UsersPage } from "@/pages/Users";
+import { About } from "@/pages/About";
+import { Donate } from "@/pages/Donate";
 import { Exports } from "@/pages/Exports";
 import { Connections } from "@/pages/Connections";
 import { Presence } from "@/pages/Presence";
@@ -16,6 +18,8 @@ const router = createHashRouter([
       { index: true, Component: Dashboard },
       { path: "users", Component: UsersPage },
       { path: "reports", Component: Reports },
+      { path: "about", Component: About },
+      { path: "donate", Component: Donate },
       { path: "presence", Component: Presence },
       { path: "exports", Component: Exports },
       { path: "connections", Component: Connections },

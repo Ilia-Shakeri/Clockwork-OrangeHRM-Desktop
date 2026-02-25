@@ -17,6 +17,8 @@ const api = {
     ipcRenderer.invoke("clockwork:open-save-dialog", options),
   showItemInFolder: (filePath: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke("clockwork:show-item-in-folder", filePath),
+  openExternal: (url: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke("clockwork:open-external", url),
   windowControls: {
     minimize: (): Promise<{ ok: boolean }> => ipcRenderer.invoke("clockwork:window-minimize"),
     toggleMaximize: (): Promise<{ ok: boolean; maximized?: boolean }> =>

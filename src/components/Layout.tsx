@@ -3,12 +3,15 @@ import { NavLink, Outlet } from "react-router";
 import {
   Cable,
   Download,
+  Heart,
+  Info,
   LayoutDashboard,
   Settings,
   FileChartColumn,
   User,
   Users,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { apiClient } from "@/api/client";
 import { cn } from "@/app/lib/utils";
@@ -17,7 +20,13 @@ import AppHeader from "@/components/AppHeader";
 import type { UiSettings } from "@/types/api";
 import mainLogo from "@/assets/Main-Logo.png";
 
-const navigationItems = [
+interface NavigationItem {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+}
+
+const primaryNavigationItems: NavigationItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/users", label: "Users", icon: User },
   { to: "/presence", label: "Live Presence", icon: Users },
@@ -25,6 +34,11 @@ const navigationItems = [
   { to: "/exports", label: "Exports", icon: Download },
   { to: "/connections", label: "Connections", icon: Cable },
   { to: "/settings", label: "Settings", icon: Settings },
+];
+
+const secondaryNavigationItems: NavigationItem[] = [
+  { to: "/about", label: "About", icon: Info },
+  { to: "/donate", label: "Donate", icon: Heart },
 ];
 
 export function Layout() {
@@ -71,6 +85,44 @@ export function Layout() {
     }
   };
 
+  const renderNavigationItem = (item: NavigationItem) => (
+    <NavLink
+      key={item.to}
+      to={item.to}
+      end={item.to === "/"}
+      className={({ isActive }) =>
+        cn(
+          "group flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-all",
+          isActive
+            ? item.to === "/donate"
+              ? "bg-red-50 text-red-600"
+              : "bg-[var(--clockwork-orange-light)] text-[var(--clockwork-orange)]"
+            : "text-[var(--clockwork-gray-700)] hover:bg-[var(--clockwork-gray-100)]",
+        )
+      }
+    >
+      {({ isActive }) => {
+        const Icon = item.icon;
+        const isDonateItem = item.to === "/donate";
+
+        return (
+          <>
+            <Icon
+              className={cn(
+                "h-5 w-5 transition-all duration-200",
+                isDonateItem &&
+                  (isActive
+                    ? "fill-red-500 text-red-500"
+                    : "fill-transparent group-hover:scale-110 group-hover:fill-red-500 group-hover:text-red-500"),
+              )}
+            />
+            <span>{item.label}</span>
+          </>
+        );
+      }}
+    </NavLink>
+  );
+
   return (
     <div className="relative h-screen overflow-hidden bg-[var(--clockwork-bg-primary)]">
       <AppHeader />
@@ -83,29 +135,13 @@ export function Layout() {
             className="h-40 w-full border-b border-[var(--clockwork-border)] object-cover"
           />
 
-          <nav className="flex-1 space-y-1 overflow-y-auto p-4">
-            {navigationItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to === "/"}
-                  className={({ isActive }) =>
-                    cn(
-                      "flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-all",
-                      isActive
-                        ? "bg-[var(--clockwork-orange-light)] text-[var(--clockwork-orange)]"
-                        : "text-[var(--clockwork-gray-700)] hover:bg-[var(--clockwork-gray-100)]",
-                    )
-                  }
-                >
-                  <Icon className="h-5 w-5" />
-                  <span>{item.label}</span>
-                </NavLink>
-              );
-            })}
+          <nav className="flex-1 overflow-y-auto p-4">
+            <div className="space-y-1">{primaryNavigationItems.map(renderNavigationItem)}</div>
           </nav>
+
+          <div className="px-4 pb-4">
+            <div className="space-y-1">{secondaryNavigationItems.map(renderNavigationItem)}</div>
+          </div>
 
           <div className="flex justify-center border-t border-[var(--clockwork-border)] p-4">
             <GlassThemeToggle isDark={isDark} onToggle={() => void handleThemeToggle()} />
@@ -113,7 +149,7 @@ export function Layout() {
         </aside>
 
         <main className="flex-1 overflow-auto">
-          <Outlet />
+          <Outlet context={{ isDark }} />
         </main>
       </div>
 

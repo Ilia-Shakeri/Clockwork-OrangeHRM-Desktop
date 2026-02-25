@@ -15,6 +15,7 @@ export interface ElectronBridge {
     options?: SaveDialogRequest,
   ) => Promise<{ canceled: boolean; filePath?: string }>;
   showItemInFolder: (filePath: string) => Promise<{ ok: boolean }>;
+  openExternal: (url: string) => Promise<{ ok: boolean }>;
   windowControls: {
     minimize: () => Promise<{ ok: boolean }>;
     toggleMaximize: () => Promise<{ ok: boolean; maximized?: boolean }>;

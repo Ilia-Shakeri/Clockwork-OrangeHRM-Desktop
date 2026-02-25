@@ -52,6 +52,8 @@ It’s designed for HR/Finance/DevOps teams who need fast, repeatable reports, c
 - 🪐 **Jalali & Gregorian** date support
 - 👤 **Users page** with DB-backed loading, search, and reusable local groups
 - 📋 **Reports selection modes**: manual users or saved groups (with Select All / Clear All)
+- ℹ️ **About page** with author details and social links
+- ❤️ **Donate page** with wallet cards and QR support
 - 🧾 **CSV / PDF exports** + export history
 - 🟢 **Live Presence** view
 - 🐍 (Optional) Python integration for summaries (resume-friendly)
@@ -143,6 +145,8 @@ Common keys:
 * `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
 * `DB_SSL`: `true`/`false`
 * `SQLITE_PATH`: path to `.sqlite` file
+* Donation QR/logo assets: `src/assets/donate/`
+* Optional custom social icon assets: `src/assets/social/`
 
 > In-app settings are saved locally via `electron-store`.
 
@@ -175,6 +179,11 @@ Common keys:
 
 * Export CSV/PDF
 * View prior exports in **Export History**
+
+### 5) About & Donate
+
+* Use **About** for author details and social links
+* Use **Donate** for wallet addresses and QR donation cards
 
 ---
 
@@ -294,6 +303,8 @@ MIT
 * 🪐 پشتیبانی تاریخ شمسی و میلادی
 * 👤 صفحه **Users** برای بارگذاری کاربران از دیتابیس، جستجو، و مدیریت گروه‌ها
 * 📋 حالت‌های انتخاب در **Reports**: انتخاب دستی کاربران یا انتخاب گروه ذخیره‌شده
+* ℹ️ صفحه **About** برای معرفی پروژه، نویسنده، و لینک‌های اجتماعی
+* ❤️ صفحه **Donate** برای حمایت مالی با کیف پول‌ها و QR
 * 🧾 خروجی CSV / PDF + تاریخچه خروجی‌ها
 * 🟢 صفحه Live Presence
 * 🐍 (اختیاری) یکپارچه‌سازی Python برای خلاصه‌سازی گزارش‌ها
@@ -374,6 +385,8 @@ cp .env.example .env
 * `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
 * `DB_SSL`: true/false
 * `SQLITE_PATH`: مسیر فایل sqlite
+* مسیر فایل‌های لوگو/QR کمک مالی: `src/assets/donate/`
+* مسیر آیکون‌های اجتماعی سفارشی (اختیاری): `src/assets/social/`
 
 > تنظیمات داخل برنامه به‌صورت لوکال با `electron-store` ذخیره می‌شود.
 
@@ -407,6 +420,11 @@ cp .env.example .env
 
 * خروجی CSV/PDF بگیر
 * خروجی‌های قبلی را در **Export History** ببین
+
+### 5) About & Donate
+
+* در **About** اطلاعات پروژه، نویسنده، و لینک‌های اجتماعی را ببین
+* در **Donate** آدرس کیف پول‌ها و QRهای کمک مالی را استفاده کن
 
 ---
 
