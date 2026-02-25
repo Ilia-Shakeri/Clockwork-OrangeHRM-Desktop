@@ -8,6 +8,7 @@ import { DataTable } from "@/app/components/DataTable";
 import { Input } from "@/app/components/Input";
 import { MultiSelect } from "@/app/components/MultiSelect";
 import { JalaliDatePicker } from "@/components/JalaliDatePicker";
+import { PageHelpButton } from "@/components/PageHelpButton";
 import {
   buildDateRange,
   defaultRangeForPreset,
@@ -188,6 +189,14 @@ export function Reports() {
         savePath: saveDialog.filePath,
       });
 
+      window.dispatchEvent(
+        new CustomEvent("clockwork:export-created", {
+          detail: {
+            filePath: saveDialog.filePath,
+            format: exportFormat,
+          },
+        }),
+      );
       toast.success(`Exported ${exportFormat.toUpperCase()} to ${saveDialog.filePath}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Export failed");
@@ -216,10 +225,21 @@ export function Reports() {
 
   return (
     <div className="space-y-6 p-8">
-      <div>
-        <h1 className="mb-2 text-3xl font-semibold text-[var(--clockwork-green)]">
-          Reports
-        </h1>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="mb-2 text-3xl font-semibold text-[var(--clockwork-green)]">
+            Reports
+          </h1>
+        </div>
+        <PageHelpButton
+          title="Reports Help"
+          overview="Build attendance reports for selected users and export them as PDF or CSV."
+          steps={[
+            "Search and select one or more users.",
+            "Choose a date range preset or set a custom range.",
+            "Click Run Report, then export in your preferred format.",
+          ]}
+        />
       </div>
 
       <Card>

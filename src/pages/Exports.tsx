@@ -1,31 +1,38 @@
-import { useEffect, useState } from "react";
-import { FolderOpen, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api/client";
 import { Badge } from "@/app/components/Badge";
 import { Button } from "@/app/components/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/Card";
+import { PageHelpButton } from "@/components/PageHelpButton";
 import type { DateDisplayCalendar, ExportHistoryItem } from "@/types/api";
 import { formatDate, formatDateTime } from "@/lib/helpers";
 
 export function Exports() {
   const [history, setHistory] = useState<ExportHistoryItem[]>([]);
-  const [loading, setLoading] = useState(false);
   const [defaultCalendar, setDefaultCalendar] = useState<DateDisplayCalendar>("shamsi");
 
-  const loadHistory = async () => {
-    setLoading(true);
+  const loadHistory = useCallback(async () => {
     try {
       const response = await apiClient.getExportHistory();
       setHistory(response.history);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to load export history");
-    } finally {
-      setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
+    const reload = () => {
+      void loadHistory();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void loadHistory();
+      }
+    };
+
     apiClient
       .getSettings()
       .then((response) => setDefaultCalendar(response.settings.defaultCalendar))
@@ -34,7 +41,16 @@ export function Exports() {
       });
 
     void loadHistory();
-  }, []);
+    window.addEventListener("clockwork:export-created", reload);
+    window.addEventListener("focus", reload);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("clockwork:export-created", reload);
+      window.removeEventListener("focus", reload);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [loadHistory]);
 
   const handleOpen = async (filePath: string) => {
     const result = await window.clockwork.showItemInFolder(filePath);
@@ -50,10 +66,15 @@ export function Exports() {
           <h1 className="mb-2 text-3xl font-semibold text-[var(--clockwork-green)]">Exports</h1>
         </div>
 
-        <Button variant="secondary" onClick={() => void loadHistory()} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
+        <PageHelpButton
+          title="Exports Help"
+          overview="Track generated files and quickly open them in their folder."
+          steps={[
+            "This page updates automatically after each new export.",
+            "Review format, date range, rows, and total hours for each item.",
+            "Click folder icon to reveal the exported file on disk.",
+          ]}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

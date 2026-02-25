@@ -7,6 +7,7 @@ import { Button } from "@/app/components/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/Card";
 import { ProgressBar } from "@/app/components/Progress";
 import { JalaliDatePicker } from "@/components/JalaliDatePicker";
+import { PageHelpButton } from "@/components/PageHelpButton";
 import {
   buildDateRange,
   defaultRangeForPreset,
@@ -212,11 +213,22 @@ export function BulkScan() {
 
   return (
     <div className="space-y-6 p-8">
-      <div>
-        <h1 className="mb-2 text-3xl font-semibold text-[var(--clockwork-green)]">
-          Bulk Scan
-        </h1>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="mb-2 text-3xl font-semibold text-[var(--clockwork-green)]">
+            Bulk Scan
+          </h1>
         </div>
+        <PageHelpButton
+          title="Bulk Scan Help"
+          overview="Use this page for batch reporting from many usernames in one run."
+          steps={[
+            "Upload a users.txt file or paste usernames into the text area.",
+            "Click Resolve Users to validate and match usernames.",
+            "Set execution mode and date range, then run the batch report.",
+          ]}
+        />
+      </div>
 
       <Card>
         <CardHeader>
