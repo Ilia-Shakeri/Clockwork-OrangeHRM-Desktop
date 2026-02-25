@@ -1,4 +1,5 @@
 import PDFDocument from "pdfkit";
+import { format as formatJalali } from "date-fns-jalali";
 import type { ExportMeta, ReportPayload, ReportRow } from "./dtos";
 
 function csvEscape(value: string | number | null): string {
@@ -14,11 +15,71 @@ function csvEscape(value: string | number | null): string {
   return asString;
 }
 
-export function buildCsv(reportPayload: ReportPayload): Buffer {
+function parseIsoDate(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(year, month - 1, day, 12);
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function formatGregorianDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}/${month}/${day}`;
+}
+
+function formatTime(date: Date): string {
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+function formatGregorianFromIso(value: string): string {
+  const parsed = parseIsoDate(value);
+  return parsed ? formatGregorianDate(parsed) : value;
+}
+
+function formatSolarFromIso(value: string): string {
+  const parsed = parseIsoDate(value);
+  return parsed ? formatJalali(parsed, "yyyy/MM/dd") : value;
+}
+
+interface ExportDateRow extends ReportRow {
+  dateGregorian: string;
+  dateSolar: string;
+}
+
+function withDualDates(rows: ReportRow[]): ExportDateRow[] {
+  return rows.map((row) => ({
+    ...row,
+    dateGregorian: formatGregorianFromIso(row.date),
+    dateSolar: formatSolarFromIso(row.date),
+  }));
+}
+
+export function buildCsv(reportPayload: ReportPayload, meta?: ExportMeta): Buffer {
+  const rowsWithDates = withDualDates(reportPayload.rows);
   const header = [
     "Username",
     "Full Name",
-    "Date",
+    "Date (Gregorian)",
+    "Date (Solar)",
     "Check In",
     "Check Out",
     "Hours",
@@ -26,12 +87,13 @@ export function buildCsv(reportPayload: ReportPayload): Buffer {
 
   const lines = [header.join(",")];
 
-  for (const row of reportPayload.rows) {
+  for (const row of rowsWithDates) {
     lines.push(
       [
         csvEscape(row.username),
         csvEscape(row.fullName),
-        csvEscape(row.date),
+        csvEscape(row.dateGregorian),
+        csvEscape(row.dateSolar),
         csvEscape(row.checkIn),
         csvEscape(row.checkOut),
         csvEscape(row.hours),
@@ -44,6 +106,11 @@ export function buildCsv(reportPayload: ReportPayload): Buffer {
   lines.push(`Total Records,${csvEscape(reportPayload.totals.records)}`);
   lines.push(`Total Users,${csvEscape(reportPayload.totals.users)}`);
 
+  if (meta) {
+    lines.push(`Range (Gregorian),${csvEscape(formatGregorianFromIso(meta.from))},${csvEscape(formatGregorianFromIso(meta.to))}`);
+    lines.push(`Range (Solar),${csvEscape(formatSolarFromIso(meta.from))},${csvEscape(formatSolarFromIso(meta.to))}`);
+  }
+
   return Buffer.from(lines.join("\n"), "utf8");
 }
 
@@ -55,7 +122,7 @@ function drawPdfTableHeader(
 ): void {
   let x = startX;
   doc.rect(startX, startY - 2, 520, 20).fill("#F58321");
-  doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(9);
+  doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(8);
 
   for (const column of columns) {
     doc.text(column.label, x + 4, startY + 3, {
@@ -68,10 +135,19 @@ function drawPdfTableHeader(
   doc.fillColor("#111111").font("Helvetica");
 }
 
+type PdfRowKey =
+  | "dateGregorian"
+  | "dateSolar"
+  | "username"
+  | "fullName"
+  | "checkIn"
+  | "checkOut"
+  | "hoursLabel";
+
 function drawPdfRow(
   doc: PDFKit.PDFDocument,
-  row: ReportRow,
-  columns: Array<{ key: keyof ReportRow | "hoursLabel"; width: number }>,
+  row: ExportDateRow,
+  columns: Array<{ key: PdfRowKey; width: number }>,
   startX: number,
   startY: number,
 ): void {
@@ -104,6 +180,7 @@ export async function buildPdf(
     margin: 36,
     compress: true,
   });
+  const rowsWithDates = withDualDates(reportPayload.rows);
 
   const chunks: Buffer[] = [];
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -116,35 +193,51 @@ export async function buildPdf(
   doc.rect(0, 0, doc.page.width, 70).fill("#F58321");
   doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(18).text(meta.title, 36, 24);
 
+  const now = new Date();
   doc.fillColor("#0B1523").font("Helvetica").fontSize(10);
-  doc.text(`Date Range: ${meta.from} to ${meta.to}`, 36, 88);
-  doc.text(`Generated: ${new Date().toLocaleString()}`, 36, 102);
+  doc.text(
+    `Date Range (Gregorian): ${formatGregorianFromIso(meta.from)} to ${formatGregorianFromIso(meta.to)}`,
+    36,
+    88,
+  );
+  doc.text(
+    `Date Range (Solar): ${formatSolarFromIso(meta.from)} to ${formatSolarFromIso(meta.to)}`,
+    36,
+    102,
+  );
+  doc.text(
+    `Generated: ${formatGregorianDate(now)} ${formatTime(now)} | ${formatJalali(now, "yyyy/MM/dd HH:mm")}`,
+    36,
+    116,
+  );
 
-  doc.moveTo(36, 122).lineTo(doc.page.width - 36, 122).strokeColor("#D1D5DB").lineWidth(1).stroke();
+  doc.moveTo(36, 136).lineTo(doc.page.width - 36, 136).strokeColor("#D1D5DB").lineWidth(1).stroke();
 
   const headerColumns = [
-    { label: "Date", width: 84 },
-    { label: "Username", width: 82 },
-    { label: "Full Name", width: 140 },
-    { label: "Check In", width: 70 },
-    { label: "Check Out", width: 70 },
-    { label: "Hours", width: 74 },
+    { label: "Date (G)", width: 78 },
+    { label: "Date (Sh)", width: 78 },
+    { label: "Username", width: 78 },
+    { label: "Full Name", width: 120 },
+    { label: "Check In", width: 58 },
+    { label: "Check Out", width: 58 },
+    { label: "Hours", width: 50 },
   ];
 
-  const rowColumns: Array<{ key: keyof ReportRow | "hoursLabel"; width: number }> = [
-    { key: "date", width: 84 },
-    { key: "username", width: 82 },
-    { key: "fullName", width: 140 },
-    { key: "checkIn", width: 70 },
-    { key: "checkOut", width: 70 },
-    { key: "hoursLabel", width: 74 },
+  const rowColumns: Array<{ key: PdfRowKey; width: number }> = [
+    { key: "dateGregorian", width: 78 },
+    { key: "dateSolar", width: 78 },
+    { key: "username", width: 78 },
+    { key: "fullName", width: 120 },
+    { key: "checkIn", width: 58 },
+    { key: "checkOut", width: 58 },
+    { key: "hoursLabel", width: 50 },
   ];
 
-  let y = 140;
+  let y = 154;
   drawPdfTableHeader(doc, headerColumns, 36, y);
   y += 24;
 
-  for (const row of reportPayload.rows) {
+  for (const row of rowsWithDates) {
     if (y > doc.page.height - 80) {
       doc.addPage();
       y = 50;

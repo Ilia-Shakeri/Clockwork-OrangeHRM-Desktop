@@ -149,7 +149,9 @@ export function Dashboard() {
                 >
                   <div>
                     <p className="font-medium text-[var(--clockwork-gray-900)]">{item.title}</p>
-                    <p className="text-xs text-[var(--clockwork-gray-600)]">{formatDateTime(item.createdAt)}</p>
+                    <p className="text-xs text-[var(--clockwork-gray-600)]">
+                      {formatDateTime(item.createdAt, settings?.settings.defaultCalendar ?? "shamsi")}
+                    </p>
                   </div>
                   <p className="text-sm uppercase text-[var(--clockwork-orange)]">{item.format}</p>
                 </div>

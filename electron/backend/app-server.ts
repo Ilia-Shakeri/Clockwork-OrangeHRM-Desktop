@@ -30,7 +30,8 @@ const connectionSchema = z.object({
 const settingsSchema = z.object({
   theme: z.enum(["light", "dark"]),
   defaultExportFormat: z.enum(["pdf", "csv"]),
-  defaultDatePreset: z.enum(["current", "last", "custom"]),
+  defaultDatePreset: z.enum(["current", "last", "payroll-cycle", "custom"]),
+  defaultCalendar: z.enum(["gregorian", "shamsi"]),
   usernameValidationRegex: z.string().min(1),
   bulkScanMode: z.enum(["combined", "per-user"]),
 });
@@ -42,7 +43,7 @@ const usersResolveSchema = z.object({
 const reportRequestSchema = z.object({
   userIds: z.array(z.string().min(1)).max(1000),
   dateRange: z.object({
-    preset: z.enum(["current", "last", "custom"]),
+    preset: z.enum(["current", "last", "payroll-cycle", "custom"]),
     from: z.string().optional(),
     to: z.string().optional(),
   }),
@@ -227,7 +228,7 @@ export async function startLocalApiServer(
 
       const content =
         parsed.format === "csv"
-          ? buildCsv(parsed.reportPayload)
+          ? buildCsv(parsed.reportPayload, parsed.meta)
           : await buildPdf(parsed.reportPayload, parsed.meta);
 
       await fs.writeFile(savePath, content);

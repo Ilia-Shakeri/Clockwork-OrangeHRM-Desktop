@@ -20,9 +20,23 @@ const DEFAULT_SETTINGS: UiSettings = {
   theme: "light",
   defaultExportFormat: "pdf",
   defaultDatePreset: "current",
+  defaultCalendar: "shamsi",
   usernameValidationRegex: "^[a-zA-Z0-9._-]+$",
   bulkScanMode: "combined",
 };
+
+function normalizeSettings(settings: Partial<UiSettings> | null | undefined): UiSettings {
+  const normalized: UiSettings = {
+    ...DEFAULT_SETTINGS,
+    ...(settings ?? {}),
+  };
+
+  if (normalized.defaultCalendar !== "gregorian" && normalized.defaultCalendar !== "shamsi") {
+    normalized.defaultCalendar = "shamsi";
+  }
+
+  return normalized;
+}
 
 export function createConfigStore(): ConfigStore {
   return new ElectronStore<PersistedState>({
@@ -36,7 +50,14 @@ export function createConfigStore(): ConfigStore {
 }
 
 export function getSettings(store: ConfigStore): UiSettings {
-  return store.get("settings");
+  const raw = store.get("settings") as UiSettings | Partial<UiSettings> | null;
+  const normalized = normalizeSettings(raw);
+
+  if (JSON.stringify(raw) !== JSON.stringify(normalized)) {
+    store.set("settings", normalized);
+  }
+
+  return normalized;
 }
 
 export function getConnection(
@@ -49,8 +70,9 @@ export function updateSettings(
   store: ConfigStore,
   nextSettings: UiSettings,
 ): UiSettings {
-  store.set("settings", nextSettings);
-  return nextSettings;
+  const normalized = normalizeSettings(nextSettings);
+  store.set("settings", normalized);
+  return normalized;
 }
 
 export function saveConnection(

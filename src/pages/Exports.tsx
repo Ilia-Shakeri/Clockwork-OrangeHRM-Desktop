@@ -5,12 +5,13 @@ import { apiClient } from "@/api/client";
 import { Badge } from "@/app/components/Badge";
 import { Button } from "@/app/components/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/Card";
-import type { ExportHistoryItem } from "@/types/api";
-import { formatDateTime } from "@/lib/helpers";
+import type { DateDisplayCalendar, ExportHistoryItem } from "@/types/api";
+import { formatDate, formatDateTime } from "@/lib/helpers";
 
 export function Exports() {
   const [history, setHistory] = useState<ExportHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [defaultCalendar, setDefaultCalendar] = useState<DateDisplayCalendar>("shamsi");
 
   const loadHistory = async () => {
     setLoading(true);
@@ -25,6 +26,13 @@ export function Exports() {
   };
 
   useEffect(() => {
+    apiClient
+      .getSettings()
+      .then((response) => setDefaultCalendar(response.settings.defaultCalendar))
+      .catch(() => {
+        // Keep default calendar fallback when settings are unavailable.
+      });
+
     void loadHistory();
   }, []);
 
@@ -40,7 +48,6 @@ export function Exports() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="mb-2 text-3xl font-semibold text-[var(--clockwork-green)]">Exports</h1>
-          <p className="text-[var(--clockwork-gray-600)]">View persisted export history and reveal generated files.</p>
         </div>
 
         <Button variant="secondary" onClick={() => void loadHistory()} disabled={loading}>
@@ -97,9 +104,11 @@ export function Exports() {
                     </div>
 
                     <p className="text-sm text-[var(--clockwork-gray-600)]">
-                      {item.from} to {item.to} | {item.rows} rows | {item.totalHours.toFixed(2)} hrs
+                      {formatDate(item.from, defaultCalendar)} to {formatDate(item.to, defaultCalendar)} | {item.rows} rows | {item.totalHours.toFixed(2)} hrs
                     </p>
-                    <p className="text-xs text-[var(--clockwork-gray-500)]">{formatDateTime(item.createdAt)}</p>
+                    <p className="text-xs text-[var(--clockwork-gray-500)]">
+                      {formatDateTime(item.createdAt, defaultCalendar)}
+                    </p>
                     <p className="truncate text-xs text-[var(--clockwork-gray-500)]">{item.filePath}</p>
                   </div>
 

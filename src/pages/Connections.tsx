@@ -82,9 +82,6 @@ export function Connections() {
     <div className="mx-auto max-w-4xl space-y-6 p-8">
       <div>
         <h1 className="mb-2 text-3xl font-semibold text-[var(--clockwork-green)]">Connections</h1>
-        <p className="text-[var(--clockwork-gray-600)]">
-          Step through your MySQL configuration, test connectivity, and persist settings in electron-store.
-        </p>
       </div>
 
       <Card>

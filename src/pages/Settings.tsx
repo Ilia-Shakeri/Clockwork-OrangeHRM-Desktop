@@ -3,7 +3,12 @@ import { Bot, Save } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api/client";
 import { Button } from "@/app/components/Button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/Card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/app/components/Card";
 import { Input } from "@/app/components/Input";
 import type { PythonStatusResponse, UiSettings } from "@/types/api";
 
@@ -11,13 +16,16 @@ const DEFAULT_SETTINGS: UiSettings = {
   theme: "light",
   defaultExportFormat: "pdf",
   defaultDatePreset: "current",
+  defaultCalendar: "shamsi",
   usernameValidationRegex: "^[a-zA-Z0-9._-]+$",
   bulkScanMode: "combined",
 };
 
 export function Settings() {
   const [settings, setSettings] = useState<UiSettings>(DEFAULT_SETTINGS);
-  const [pythonStatus, setPythonStatus] = useState<PythonStatusResponse | null>(null);
+  const [pythonStatus, setPythonStatus] = useState<PythonStatusResponse | null>(
+    null,
+  );
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -38,7 +46,9 @@ export function Settings() {
         setPythonStatus(pythonResponse);
       } catch (error) {
         if (active) {
-          toast.error(error instanceof Error ? error.message : "Failed to load settings");
+          toast.error(
+            error instanceof Error ? error.message : "Failed to load settings",
+          );
         }
       }
     };
@@ -72,7 +82,9 @@ export function Settings() {
       await apiClient.saveSettings(settings);
       toast.success("Settings saved.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save settings");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to save settings",
+      );
     } finally {
       setSaving(false);
     }
@@ -81,10 +93,9 @@ export function Settings() {
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-8">
       <div>
-        <h1 className="mb-2 text-3xl font-semibold text-[var(--clockwork-green)]">Settings</h1>
-        <p className="text-[var(--clockwork-gray-600)]">
-          Configure app behavior, defaults, and validation rules stored in electron-store.
-        </p>
+        <h1 className="mb-2 text-3xl font-semibold text-[var(--clockwork-green)]">
+          Settings
+        </h1>
       </div>
 
       <Card>
@@ -94,19 +105,39 @@ export function Settings() {
         <CardContent>
           <div className="space-y-4">
             <div>
-              <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-700)]">Default Export Format</p>
-              <div className="flex gap-2">
+              <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-700)]">
+                Default Export Format
+              </p>
+              <div className="flex flex-wrap gap-2">
                 <Button
                   size="sm"
-                  variant={settings.defaultExportFormat === "pdf" ? "primary" : "secondary"}
-                  onClick={() => setSettings((current) => ({ ...current, defaultExportFormat: "pdf" }))}
+                  variant={
+                    settings.defaultExportFormat === "pdf"
+                      ? "primary"
+                      : "secondary"
+                  }
+                  onClick={() =>
+                    setSettings((current) => ({
+                      ...current,
+                      defaultExportFormat: "pdf",
+                    }))
+                  }
                 >
                   PDF
                 </Button>
                 <Button
                   size="sm"
-                  variant={settings.defaultExportFormat === "csv" ? "primary" : "secondary"}
-                  onClick={() => setSettings((current) => ({ ...current, defaultExportFormat: "csv" }))}
+                  variant={
+                    settings.defaultExportFormat === "csv"
+                      ? "primary"
+                      : "secondary"
+                  }
+                  onClick={() =>
+                    setSettings((current) => ({
+                      ...current,
+                      defaultExportFormat: "csv",
+                    }))
+                  }
                 >
                   CSV
                 </Button>
@@ -114,26 +145,111 @@ export function Settings() {
             </div>
 
             <div>
-              <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-700)]">Default Date Range</p>
+              <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-700)]">
+                Default Calendar
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant={
+                    settings.defaultCalendar === "gregorian"
+                      ? "primary"
+                      : "secondary"
+                  }
+                  onClick={() =>
+                    setSettings((current) => ({
+                      ...current,
+                      defaultCalendar: "gregorian",
+                    }))
+                  }
+                >
+                  Gregorian
+                </Button>
+                <Button
+                  size="sm"
+                  variant={
+                    settings.defaultCalendar === "shamsi"
+                      ? "primary"
+                      : "secondary"
+                  }
+                  onClick={() =>
+                    setSettings((current) => ({
+                      ...current,
+                      defaultCalendar: "shamsi",
+                    }))
+                  }
+                >
+                  Solar
+                </Button>
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-700)]">
+                Default Date Range
+              </p>
               <div className="flex gap-2">
                 <Button
                   size="sm"
-                  variant={settings.defaultDatePreset === "current" ? "primary" : "secondary"}
-                  onClick={() => setSettings((current) => ({ ...current, defaultDatePreset: "current" }))}
+                  variant={
+                    settings.defaultDatePreset === "payroll-cycle"
+                      ? "primary"
+                      : "secondary"
+                  }
+                  onClick={() =>
+                    setSettings((current) => ({
+                      ...current,
+                      defaultDatePreset: "payroll-cycle",
+                    }))
+                  }
+                >
+                  26-25
+                </Button>
+                <Button
+                  size="sm"
+                  variant={
+                    settings.defaultDatePreset === "current"
+                      ? "primary"
+                      : "secondary"
+                  }
+                  onClick={() =>
+                    setSettings((current) => ({
+                      ...current,
+                      defaultDatePreset: "current",
+                    }))
+                  }
                 >
                   Current
                 </Button>
                 <Button
                   size="sm"
-                  variant={settings.defaultDatePreset === "last" ? "primary" : "secondary"}
-                  onClick={() => setSettings((current) => ({ ...current, defaultDatePreset: "last" }))}
+                  variant={
+                    settings.defaultDatePreset === "last"
+                      ? "primary"
+                      : "secondary"
+                  }
+                  onClick={() =>
+                    setSettings((current) => ({
+                      ...current,
+                      defaultDatePreset: "last",
+                    }))
+                  }
                 >
                   Last Month
                 </Button>
                 <Button
                   size="sm"
-                  variant={settings.defaultDatePreset === "custom" ? "primary" : "secondary"}
-                  onClick={() => setSettings((current) => ({ ...current, defaultDatePreset: "custom" }))}
+                  variant={
+                    settings.defaultDatePreset === "custom"
+                      ? "primary"
+                      : "secondary"
+                  }
+                  onClick={() =>
+                    setSettings((current) => ({
+                      ...current,
+                      defaultDatePreset: "custom",
+                    }))
+                  }
                 >
                   Custom
                 </Button>
@@ -141,19 +257,39 @@ export function Settings() {
             </div>
 
             <div>
-              <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-700)]">Bulk Scan Mode</p>
+              <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-700)]">
+                Bulk Scan Mode
+              </p>
               <div className="flex gap-2">
                 <Button
                   size="sm"
-                  variant={settings.bulkScanMode === "combined" ? "primary" : "secondary"}
-                  onClick={() => setSettings((current) => ({ ...current, bulkScanMode: "combined" }))}
+                  variant={
+                    settings.bulkScanMode === "combined"
+                      ? "primary"
+                      : "secondary"
+                  }
+                  onClick={() =>
+                    setSettings((current) => ({
+                      ...current,
+                      bulkScanMode: "combined",
+                    }))
+                  }
                 >
                   Combined
                 </Button>
                 <Button
                   size="sm"
-                  variant={settings.bulkScanMode === "per-user" ? "primary" : "secondary"}
-                  onClick={() => setSettings((current) => ({ ...current, bulkScanMode: "per-user" }))}
+                  variant={
+                    settings.bulkScanMode === "per-user"
+                      ? "primary"
+                      : "secondary"
+                  }
+                  onClick={() =>
+                    setSettings((current) => ({
+                      ...current,
+                      bulkScanMode: "per-user",
+                    }))
+                  }
                 >
                   Per User
                 </Button>
@@ -178,26 +314,10 @@ export function Settings() {
               }))
             }
             helperText="Used by Bulk Scan for client-side and backend validation"
-            error={regexStatus === "invalid" ? "Invalid regex pattern" : undefined}
+            error={
+              regexStatus === "invalid" ? "Invalid regex pattern" : undefined
+            }
           />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Python Enhancements</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-start gap-3">
-            <Bot className="mt-0.5 h-5 w-5 text-[var(--clockwork-orange)]" />
-            <p className="text-sm text-[var(--clockwork-gray-700)]">
-              {pythonStatus
-                ? pythonStatus.available
-                  ? `Enabled: ${pythonStatus.message}`
-                  : `Python enhancements unavailable: ${pythonStatus.message}`
-                : "Checking Python runtime..."}
-            </p>
-          </div>
         </CardContent>
       </Card>
 

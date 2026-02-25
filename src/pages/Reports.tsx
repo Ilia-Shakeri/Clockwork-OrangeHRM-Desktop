@@ -7,14 +7,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/Card"
 import { DataTable } from "@/app/components/DataTable";
 import { Input } from "@/app/components/Input";
 import { MultiSelect } from "@/app/components/MultiSelect";
+import { JalaliDatePicker } from "@/components/JalaliDatePicker";
 import {
   buildDateRange,
   defaultRangeForPreset,
   formatDate,
+  formatDateCompact,
   formatHours,
   suggestedExportFilename,
 } from "@/lib/helpers";
 import type {
+  DateDisplayCalendar,
   DateRangePreset,
   ExportFormat,
   PythonSummaryResponse,
@@ -29,6 +32,7 @@ export function Reports() {
 
   const [datePreset, setDatePreset] = useState<DateRangePreset>("current");
   const [customDateRange, setCustomDateRange] = useState(() => defaultRangeForPreset("current"));
+  const [defaultCalendar, setDefaultCalendar] = useState<DateDisplayCalendar>("shamsi");
 
   const [report, setReport] = useState<ReportPayload | null>(null);
   const [running, setRunning] = useState(false);
@@ -57,6 +61,7 @@ export function Reports() {
         setExportFormat(settingsResponse.settings.defaultExportFormat);
         setDatePreset(settingsResponse.settings.defaultDatePreset);
         setCustomDateRange(defaultRangeForPreset(settingsResponse.settings.defaultDatePreset));
+        setDefaultCalendar(settingsResponse.settings.defaultCalendar);
 
         setPythonAvailable(pythonStatus.available);
         setPythonMessage(pythonStatus.message);
@@ -173,7 +178,10 @@ export function Reports() {
         format: exportFormat,
         reportPayload: report,
         meta: {
-          title: "Clockwork Attendance Report",
+          title:
+            datePreset === "payroll-cycle"
+              ? "Clockwork Payroll Orbit Report (Madar-e Hoghooghi 26-25)"
+              : "Clockwork Attendance Report",
           from: effectiveRange.from,
           to: effectiveRange.to,
         },
@@ -209,10 +217,9 @@ export function Reports() {
   return (
     <div className="space-y-6 p-8">
       <div>
-        <h1 className="mb-2 text-3xl font-semibold text-[var(--clockwork-green)]">Reports</h1>
-        <p className="text-[var(--clockwork-gray-600)]">
-          Build deterministic attendance reports, export as PDF/CSV, and optionally run Python summaries.
-        </p>
+        <h1 className="mb-2 text-3xl font-semibold text-[var(--clockwork-green)]">
+          Reports
+        </h1>
       </div>
 
       <Card>
@@ -238,14 +245,25 @@ export function Reports() {
             />
 
             <div>
-              <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-700)]">Date Range</p>
+              <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-700)]">
+                Date Range
+              </p>
               <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant={
+                    datePreset === "payroll-cycle" ? "primary" : "secondary"
+                  }
+                  onClick={() => setDatePreset("payroll-cycle")}
+                >
+                26-25
+                </Button>
                 <Button
                   size="sm"
                   variant={datePreset === "current" ? "primary" : "secondary"}
                   onClick={() => setDatePreset("current")}
                 >
-                  Current
+                  Current Month
                 </Button>
                 <Button
                   size="sm"
@@ -266,33 +284,43 @@ export function Reports() {
 
             {datePreset === "custom" ? (
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <Input
+                <JalaliDatePicker
                   label="From"
-                  type="date"
                   value={customDateRange.from}
-                  onChange={(event) =>
+                  calendar={defaultCalendar}
+                  onChange={(nextDate) =>
                     setCustomDateRange((current) => ({
                       ...current,
-                      from: event.target.value,
+                      from: nextDate,
                     }))
                   }
                 />
-                <Input
+                <JalaliDatePicker
                   label="To"
-                  type="date"
                   value={customDateRange.to}
-                  onChange={(event) =>
+                  calendar={defaultCalendar}
+                  onChange={(nextDate) =>
                     setCustomDateRange((current) => ({
                       ...current,
-                      to: event.target.value,
+                      to: nextDate,
                     }))
                   }
                 />
               </div>
             ) : null}
 
+            <p className="text-xs text-[var(--clockwork-gray-600)]">
+              Active Range: {formatDateCompact(effectiveRange.from, defaultCalendar)}{" "}
+              <span className="font-semibold text-[var(--clockwork-orange)]">to</span>{" "}
+              {formatDateCompact(effectiveRange.to, defaultCalendar)}
+            </p>
+
             <div className="flex flex-wrap items-center gap-3 pt-2">
-              <Button variant="primary" onClick={handleRunReport} disabled={running}>
+              <Button
+                variant="primary"
+                onClick={handleRunReport}
+                disabled={running}
+              >
                 {running ? (
                   <>
                     <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -325,7 +353,11 @@ export function Reports() {
                     </Button>
                   </div>
 
-                  <Button variant="secondary" onClick={handleExport} disabled={exporting}>
+                  <Button
+                    variant="secondary"
+                    onClick={handleExport}
+                    disabled={exporting}
+                  >
                     {exporting ? (
                       <>
                         <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -350,7 +382,9 @@ export function Reports() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <Card>
               <CardContent>
-                <p className="text-sm text-[var(--clockwork-gray-600)]">Total Hours</p>
+                <p className="text-sm text-[var(--clockwork-gray-600)]">
+                  Total Hours
+                </p>
                 <p className="text-2xl font-semibold text-[var(--clockwork-gray-900)]">
                   {formatHours(report.totals.hours)}
                 </p>
@@ -358,7 +392,9 @@ export function Reports() {
             </Card>
             <Card>
               <CardContent>
-                <p className="text-sm text-[var(--clockwork-gray-600)]">Records</p>
+                <p className="text-sm text-[var(--clockwork-gray-600)]">
+                  Records
+                </p>
                 <p className="text-2xl font-semibold text-[var(--clockwork-gray-900)]">
                   {report.totals.records}
                 </p>
@@ -366,8 +402,12 @@ export function Reports() {
             </Card>
             <Card>
               <CardContent>
-                <p className="text-sm text-[var(--clockwork-gray-600)]">Users</p>
-                <p className="text-2xl font-semibold text-[var(--clockwork-gray-900)]">{report.totals.users}</p>
+                <p className="text-sm text-[var(--clockwork-gray-600)]">
+                  Users
+                </p>
+                <p className="text-2xl font-semibold text-[var(--clockwork-gray-900)]">
+                  {report.totals.users}
+                </p>
               </CardContent>
             </Card>
           </div>
@@ -384,7 +424,7 @@ export function Reports() {
                   {
                     key: "date",
                     header: "Date",
-                    render: (row) => formatDate(row.date),
+                    render: (row) => formatDate(row.date, defaultCalendar),
                   },
                   {
                     key: "username",
@@ -422,7 +462,11 @@ export function Reports() {
               <div className="flex items-center justify-between gap-3">
                 <CardTitle>Python Enhancement</CardTitle>
                 {pythonAvailable ? (
-                  <Button variant="secondary" onClick={handlePythonSummary} disabled={summarizing}>
+                  <Button
+                    variant="secondary"
+                    onClick={handlePythonSummary}
+                    disabled={summarizing}
+                  >
                     {summarizing ? (
                       <>
                         <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -448,7 +492,9 @@ export function Reports() {
                 </div>
               ) : summary ? (
                 <div className="space-y-3">
-                  <p className="text-sm text-[var(--clockwork-gray-700)]">{summary.summary}</p>
+                  <p className="text-sm text-[var(--clockwork-gray-700)]">
+                    {summary.summary}
+                  </p>
                   {summary.anomalies.length > 0 ? (
                     <div className="rounded-lg border border-[var(--clockwork-orange)]/30 bg-[var(--clockwork-orange-light)] p-3">
                       <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-900)]">
@@ -457,7 +503,9 @@ export function Reports() {
                       <ul className="space-y-1 text-sm text-[var(--clockwork-gray-700)]">
                         {summary.anomalies.map((item) => (
                           <li key={`${item.username}-${item.date}`}>
-                            {item.username} on {item.date}: {item.hours.toFixed(2)} hrs
+                            {item.username} on{" "}
+                            {formatDate(item.date, defaultCalendar)}:{" "}
+                            {item.hours.toFixed(2)} hrs
                           </li>
                         ))}
                       </ul>
@@ -466,7 +514,8 @@ export function Reports() {
                 </div>
               ) : (
                 <p className="text-sm text-[var(--clockwork-gray-600)]">
-                  Python integration detected. Generate a summary for additional insights.
+                  Python integration detected. Generate a summary for additional
+                  insights.
                 </p>
               )}
             </CardContent>

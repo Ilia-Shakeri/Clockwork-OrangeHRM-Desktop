@@ -1,6 +1,7 @@
-export type DateRangePreset = "current" | "last" | "custom";
+export type DateRangePreset = "current" | "last" | "payroll-cycle" | "custom";
 export type ExportFormat = "pdf" | "csv";
 export type BulkScanMode = "combined" | "per-user";
+export type DateDisplayCalendar = "gregorian" | "shamsi";
 
 export interface ConnectionPayload {
   host: string;
@@ -76,6 +77,7 @@ export interface UiSettings {
   theme: "light" | "dark";
   defaultExportFormat: ExportFormat;
   defaultDatePreset: DateRangePreset;
+  defaultCalendar: DateDisplayCalendar;
   usernameValidationRegex: string;
   bulkScanMode: BulkScanMode;
 }

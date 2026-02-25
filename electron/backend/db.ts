@@ -1,4 +1,11 @@
 import mysql, { type Pool, type PoolOptions, type RowDataPacket } from "mysql2/promise";
+import {
+  addMonths as addJalaliMonths,
+  getDate as getJalaliDayOfMonth,
+  getMonth as getJalaliMonth,
+  getYear as getJalaliYear,
+  newDate as newJalaliDate,
+} from "date-fns-jalali";
 import type {
   ConnectionPayload,
   ReportPayload,
@@ -105,14 +112,77 @@ function createPoolConfig(connection: ConnectionPayload): PoolOptions {
   };
 }
 
+function toLocalIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseIsoDateInput(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return null;
+  }
+
+  const parsed = new Date(year, month - 1, day, 12);
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function resolvePayrollCycleRange(baseDate: Date): { from: string; to: string } {
+  const baseJalaliYear = getJalaliYear(baseDate);
+  const baseJalaliMonth = getJalaliMonth(baseDate);
+  const baseJalaliDay = getJalaliDayOfMonth(baseDate);
+
+  let startMonthAnchor = newJalaliDate(baseJalaliYear, baseJalaliMonth, 1);
+  if (baseJalaliDay <= 25) {
+    startMonthAnchor = addJalaliMonths(startMonthAnchor, -1);
+  }
+
+  const start = newJalaliDate(
+    getJalaliYear(startMonthAnchor),
+    getJalaliMonth(startMonthAnchor),
+    26,
+  );
+
+  const endMonthAnchor = addJalaliMonths(start, 1);
+  const end = newJalaliDate(
+    getJalaliYear(endMonthAnchor),
+    getJalaliMonth(endMonthAnchor),
+    25,
+  );
+
+  return {
+    from: toLocalIsoDate(start),
+    to: toLocalIsoDate(end),
+  };
+}
+
 function resolveDateRange(input: ReportRequest["dateRange"]): { from: string; to: string } {
   const now = new Date();
 
   if (input.preset === "current") {
     const from = new Date(now.getFullYear(), now.getMonth(), 1);
     return {
-      from: from.toISOString().slice(0, 10),
-      to: now.toISOString().slice(0, 10),
+      from: toLocalIsoDate(from),
+      to: toLocalIsoDate(now),
     };
   }
 
@@ -120,19 +190,23 @@ function resolveDateRange(input: ReportRequest["dateRange"]): { from: string; to
     const from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const to = new Date(now.getFullYear(), now.getMonth(), 0);
     return {
-      from: from.toISOString().slice(0, 10),
-      to: to.toISOString().slice(0, 10),
+      from: toLocalIsoDate(from),
+      to: toLocalIsoDate(to),
     };
+  }
+
+  if (input.preset === "payroll-cycle") {
+    return resolvePayrollCycleRange(now);
   }
 
   if (!input.from || !input.to) {
     throw new Error("Custom date range requires both from and to dates.");
   }
 
-  const from = new Date(input.from);
-  const to = new Date(input.to);
+  const from = parseIsoDateInput(input.from);
+  const to = parseIsoDateInput(input.to);
 
-  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+  if (!from || !to) {
     throw new Error("Invalid date format in custom date range.");
   }
 
@@ -141,8 +215,8 @@ function resolveDateRange(input: ReportRequest["dateRange"]): { from: string; to
   }
 
   return {
-    from: from.toISOString().slice(0, 10),
-    to: to.toISOString().slice(0, 10),
+    from: toLocalIsoDate(from),
+    to: toLocalIsoDate(to),
   };
 }
 

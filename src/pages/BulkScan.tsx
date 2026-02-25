@@ -6,9 +6,16 @@ import { Badge } from "@/app/components/Badge";
 import { Button } from "@/app/components/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/Card";
 import { ProgressBar } from "@/app/components/Progress";
-import { buildDateRange, defaultRangeForPreset, parseUsernamesFromText } from "@/lib/helpers";
+import { JalaliDatePicker } from "@/components/JalaliDatePicker";
+import {
+  buildDateRange,
+  defaultRangeForPreset,
+  formatDateCompact,
+  parseUsernamesFromText,
+} from "@/lib/helpers";
 import type {
   BulkScanMode,
+  DateDisplayCalendar,
   DateRangePreset,
   ReportPayload,
   ResolvedUserResult,
@@ -20,6 +27,7 @@ function defaultSettings(): UiSettings {
     theme: "light",
     defaultExportFormat: "pdf",
     defaultDatePreset: "current",
+    defaultCalendar: "shamsi",
     usernameValidationRegex: "^[a-zA-Z0-9._-]+$",
     bulkScanMode: "combined",
   };
@@ -34,6 +42,7 @@ export function BulkScan() {
 
   const [datePreset, setDatePreset] = useState<DateRangePreset>("current");
   const [customDateRange, setCustomDateRange] = useState(() => defaultRangeForPreset("current"));
+  const [defaultCalendar, setDefaultCalendar] = useState<DateDisplayCalendar>("shamsi");
 
   const [resolving, setResolving] = useState(false);
   const [resolvedUsers, setResolvedUsers] = useState<ResolvedUserResult[]>([]);
@@ -55,6 +64,7 @@ export function BulkScan() {
         setSettings(response.settings);
         setDatePreset(response.settings.defaultDatePreset);
         setCustomDateRange(defaultRangeForPreset(response.settings.defaultDatePreset));
+        setDefaultCalendar(response.settings.defaultCalendar);
       } catch (error) {
         if (active) {
           toast.error(error instanceof Error ? error.message : "Failed to load settings");
@@ -203,11 +213,10 @@ export function BulkScan() {
   return (
     <div className="space-y-6 p-8">
       <div>
-        <h1 className="mb-2 text-3xl font-semibold text-[var(--clockwork-green)]">Bulk Scan</h1>
-        <p className="text-[var(--clockwork-gray-600)]">
-          Upload users.txt or paste usernames, validate against regex rules, then run combined or per-user reports.
-        </p>
-      </div>
+        <h1 className="mb-2 text-3xl font-semibold text-[var(--clockwork-green)]">
+          Bulk Scan
+        </h1>
+        </div>
 
       <Card>
         <CardHeader>
@@ -220,13 +229,25 @@ export function BulkScan() {
               className="flex h-28 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-[var(--clockwork-border)] bg-[var(--clockwork-gray-50)]"
             >
               <Upload className="mb-2 h-6 w-6 text-[var(--clockwork-gray-500)]" />
-              <p className="text-sm text-[var(--clockwork-gray-700)]">Upload users.txt</p>
-              <p className="text-xs text-[var(--clockwork-gray-500)]">One username per line or comma-separated</p>
+              <p className="text-sm text-[var(--clockwork-gray-700)]">
+                Upload users.txt
+              </p>
+              <p className="text-xs text-[var(--clockwork-gray-500)]">
+                One username per line or comma-separated
+              </p>
             </label>
-            <input id="bulk-file" type="file" accept=".txt" className="hidden" onChange={handleFileSelect} />
+            <input
+              id="bulk-file"
+              type="file"
+              accept=".txt"
+              className="hidden"
+              onChange={handleFileSelect}
+            />
 
             {fileName ? (
-              <p className="text-sm text-[var(--clockwork-gray-600)]">Loaded file: {fileName}</p>
+              <p className="text-sm text-[var(--clockwork-gray-600)]">
+                Loaded file: {fileName}
+              </p>
             ) : null}
 
             <textarea
@@ -242,7 +263,11 @@ export function BulkScan() {
             />
 
             <div className="flex flex-wrap items-center gap-3">
-              <Button variant="primary" onClick={handleResolveUsers} disabled={resolving || usernames.length === 0 || !loaded}>
+              <Button
+                variant="primary"
+                onClick={handleResolveUsers}
+                disabled={resolving || usernames.length === 0 || !loaded}
+              >
                 {resolving ? (
                   <>
                     <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -252,8 +277,12 @@ export function BulkScan() {
                   "Resolve Users"
                 )}
               </Button>
-              <p className="text-sm text-[var(--clockwork-gray-600)]">{usernames.length} parsed username(s)</p>
-              <p className="text-sm text-[var(--clockwork-gray-600)]">{localInvalid.length} invalid by regex</p>
+              <p className="text-sm text-[var(--clockwork-gray-600)]">
+                {usernames.length} parsed username(s)
+              </p>
+              <p className="text-sm text-[var(--clockwork-gray-600)]">
+                {localInvalid.length} invalid by regex
+              </p>
             </div>
           </div>
         </CardContent>
@@ -266,18 +295,28 @@ export function BulkScan() {
         <CardContent>
           <div className="space-y-4">
             <div>
-              <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-700)]">Execution Mode</p>
+              <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-700)]">
+                Execution Mode
+              </p>
               <div className="flex gap-2">
                 <Button
                   size="sm"
-                  variant={settings.bulkScanMode === "combined" ? "primary" : "secondary"}
+                  variant={
+                    settings.bulkScanMode === "combined"
+                      ? "primary"
+                      : "secondary"
+                  }
                   onClick={() => void persistMode("combined")}
                 >
                   Combined Report
                 </Button>
                 <Button
                   size="sm"
-                  variant={settings.bulkScanMode === "per-user" ? "primary" : "secondary"}
+                  variant={
+                    settings.bulkScanMode === "per-user"
+                      ? "primary"
+                      : "secondary"
+                  }
                   onClick={() => void persistMode("per-user")}
                 >
                   Per User
@@ -286,14 +325,25 @@ export function BulkScan() {
             </div>
 
             <div>
-              <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-700)]">Date Range</p>
-              <div className="flex gap-2">
+              <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-700)]">
+                Date Range
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant={
+                    datePreset === "payroll-cycle" ? "primary" : "secondary"
+                  }
+                  onClick={() => setDatePreset("payroll-cycle")}
+                >
+                  26-25
+                </Button>
                 <Button
                   size="sm"
                   variant={datePreset === "current" ? "primary" : "secondary"}
                   onClick={() => setDatePreset("current")}
                 >
-                  Current
+                  Current Month
                 </Button>
                 <Button
                   size="sm"
@@ -314,27 +364,37 @@ export function BulkScan() {
 
             {datePreset === "custom" ? (
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <input
-                  type="date"
+                <JalaliDatePicker
+                  label="From"
                   value={customDateRange.from}
-                  onChange={(event) =>
-                    setCustomDateRange((current) => ({ ...current, from: event.target.value }))
+                  calendar={defaultCalendar}
+                  onChange={(nextDate) =>
+                    setCustomDateRange((current) => ({
+                      ...current,
+                      from: nextDate,
+                    }))
                   }
-                  className="rounded-lg border border-[var(--clockwork-border)] px-3 py-2"
                 />
-                <input
-                  type="date"
+                <JalaliDatePicker
+                  label="To"
                   value={customDateRange.to}
-                  onChange={(event) =>
-                    setCustomDateRange((current) => ({ ...current, to: event.target.value }))
+                  calendar={defaultCalendar}
+                  onChange={(nextDate) =>
+                    setCustomDateRange((current) => ({
+                      ...current,
+                      to: nextDate,
+                    }))
                   }
-                  className="rounded-lg border border-[var(--clockwork-border)] px-3 py-2"
                 />
               </div>
             ) : null}
 
             <div className="flex flex-wrap items-center gap-3">
-              <Button variant="secondary" onClick={handleRunBatch} disabled={running || foundCount === 0}>
+              <Button
+                variant="secondary"
+                onClick={handleRunBatch}
+                disabled={running || foundCount === 0}
+              >
                 {running ? (
                   <>
                     <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -345,11 +405,15 @@ export function BulkScan() {
                 )}
               </Button>
               <p className="text-sm text-[var(--clockwork-gray-600)]">
-                Range: {effectiveRange.from} to {effectiveRange.to}
+                Range: {formatDateCompact(effectiveRange.from, defaultCalendar)}{" "}
+                <span className="font-semibold text-[var(--clockwork-orange)]">to</span>{" "}
+                {formatDateCompact(effectiveRange.to, defaultCalendar)}
               </p>
             </div>
 
-            {running ? <ProgressBar value={progress} label="Executing report jobs" /> : null}
+            {running ? (
+              <ProgressBar value={progress} label="Executing report jobs" />
+            ) : null}
           </div>
         </CardContent>
       </Card>
@@ -361,8 +425,12 @@ export function BulkScan() {
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-5 w-5 text-[var(--clockwork-green)]" />
                 <div>
-                  <p className="text-xl font-semibold text-[var(--clockwork-gray-900)]">{foundCount}</p>
-                  <p className="text-sm text-[var(--clockwork-gray-600)]">Matched</p>
+                  <p className="text-xl font-semibold text-[var(--clockwork-gray-900)]">
+                    {foundCount}
+                  </p>
+                  <p className="text-sm text-[var(--clockwork-gray-600)]">
+                    Matched
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -372,8 +440,12 @@ export function BulkScan() {
               <div className="flex items-center gap-2">
                 <XCircle className="h-5 w-5 text-[var(--clockwork-warning)]" />
                 <div>
-                  <p className="text-xl font-semibold text-[var(--clockwork-gray-900)]">{notFoundCount}</p>
-                  <p className="text-sm text-[var(--clockwork-gray-600)]">Not Found</p>
+                  <p className="text-xl font-semibold text-[var(--clockwork-gray-900)]">
+                    {notFoundCount}
+                  </p>
+                  <p className="text-sm text-[var(--clockwork-gray-600)]">
+                    Not Found
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -383,8 +455,12 @@ export function BulkScan() {
               <div className="flex items-center gap-2">
                 <XCircle className="h-5 w-5 text-[var(--clockwork-error)]" />
                 <div>
-                  <p className="text-xl font-semibold text-[var(--clockwork-gray-900)]">{invalidCount}</p>
-                  <p className="text-sm text-[var(--clockwork-gray-600)]">Invalid</p>
+                  <p className="text-xl font-semibold text-[var(--clockwork-gray-900)]">
+                    {invalidCount}
+                  </p>
+                  <p className="text-sm text-[var(--clockwork-gray-600)]">
+                    Invalid
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -427,8 +503,8 @@ export function BulkScan() {
             <div className="flex items-center gap-3">
               <FileText className="h-5 w-5 text-[var(--clockwork-orange)]" />
               <p className="text-sm text-[var(--clockwork-gray-700)]">
-                Generated {batchReport.totals.records} records for {batchReport.totals.users} user(s), totaling
-                {" "}
+                Generated {batchReport.totals.records} records for{" "}
+                {batchReport.totals.users} user(s), totaling{" "}
                 {batchReport.totals.hours.toFixed(2)} hours.
               </p>
             </div>
