@@ -127,9 +127,9 @@ export function JalaliDatePicker({
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
         className={cn(
-          "flex w-full items-center justify-between rounded-lg border border-[var(--clockwork-border)] bg-white px-3 py-2 text-left transition-all",
+          "flex w-full items-center justify-between rounded-lg border border-[var(--clockwork-border)] bg-[var(--clockwork-bg-primary)] px-3 py-2 text-left transition-all",
           "focus:outline-none focus:ring-2 focus:ring-[var(--clockwork-orange)] focus:border-transparent",
-          disabled && "cursor-not-allowed bg-[var(--clockwork-gray-100)]",
+          disabled && "cursor-not-allowed bg-[var(--clockwork-bg-tertiary)]",
         )}
       >
         {isGregorian ? (
@@ -149,7 +149,7 @@ export function JalaliDatePicker({
       {open ? (
         <div
           dir={isGregorian ? "ltr" : "rtl"}
-          className="absolute z-30 mt-2 w-72 rounded-xl border border-[var(--clockwork-border)] bg-white p-3 shadow-xl"
+          className="absolute z-30 mt-2 w-72 rounded-xl border border-[var(--clockwork-border)] bg-[var(--clockwork-bg-secondary)] p-3 shadow-xl"
         >
           <div className="mb-3 flex items-center justify-between">
             <button
@@ -212,4 +212,3 @@ export function JalaliDatePicker({
     </div>
   );
 }
-

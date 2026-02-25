@@ -32,11 +32,11 @@ export function Input({
         id={inputId}
         className={cn(
           'w-full px-3 py-2 border rounded-lg transition-all',
-          'bg-white text-[var(--clockwork-gray-900)]',
+          'bg-[var(--clockwork-bg-primary)] text-[var(--clockwork-gray-900)]',
           'border-[var(--clockwork-border)]',
           'focus:outline-none focus:ring-2 focus:ring-[var(--clockwork-orange)] focus:border-transparent',
-          'placeholder:text-[var(--clockwork-gray-400)]',
-          'disabled:bg-[var(--clockwork-gray-100)] disabled:cursor-not-allowed',
+          'placeholder:text-[var(--clockwork-gray-500)]',
+          'disabled:bg-[var(--clockwork-bg-tertiary)] disabled:text-[var(--clockwork-gray-500)] disabled:cursor-not-allowed',
           error && 'border-[var(--clockwork-error)] focus:ring-[var(--clockwork-error)]',
           className
         )}

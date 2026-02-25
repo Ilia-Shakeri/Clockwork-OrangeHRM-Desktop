@@ -258,7 +258,7 @@ export function BulkScan() {
                 setBatchReport(null);
               }}
               rows={8}
-              className="w-full rounded-lg border border-[var(--clockwork-border)] px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[var(--clockwork-orange)]"
+              className="w-full rounded-lg border border-[var(--clockwork-border)] bg-[var(--clockwork-bg-primary)] px-3 py-2 font-mono text-sm text-[var(--clockwork-gray-900)] placeholder:text-[var(--clockwork-gray-500)] focus:outline-none focus:ring-2 focus:ring-[var(--clockwork-orange)]"
               placeholder="Paste usernames here"
             />
 

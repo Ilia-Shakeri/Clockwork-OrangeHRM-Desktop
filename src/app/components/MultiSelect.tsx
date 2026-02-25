@@ -81,7 +81,7 @@ export function MultiSelect({
       <div
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          'min-h-[42px] px-3 py-2 border border-[var(--clockwork-border)] rounded-lg bg-white cursor-pointer',
+          'min-h-[42px] px-3 py-2 border border-[var(--clockwork-border)] rounded-lg bg-[var(--clockwork-bg-primary)] cursor-pointer',
           'hover:border-[var(--clockwork-gray-400)] transition-colors',
           isOpen && 'border-[var(--clockwork-orange)] ring-2 ring-[var(--clockwork-orange)]/20'
         )}
@@ -89,7 +89,7 @@ export function MultiSelect({
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-wrap gap-1.5 flex-1 min-h-[26px]">
             {selectedOptions.length === 0 ? (
-              <span className="text-[var(--clockwork-gray-400)]">{placeholder}</span>
+              <span className="text-[var(--clockwork-gray-500)]">{placeholder}</span>
             ) : (
               selectedOptions.map((option) => (
                 <span
@@ -130,7 +130,7 @@ export function MultiSelect({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.15 }}
-            className="absolute z-50 mt-2 w-full bg-white border border-[var(--clockwork-border)] rounded-lg shadow-[var(--clockwork-shadow-md)] max-h-64 overflow-hidden"
+            className="absolute z-50 mt-2 w-full bg-[var(--clockwork-bg-primary)] border border-[var(--clockwork-border)] rounded-lg shadow-[var(--clockwork-shadow-md)] max-h-64 overflow-hidden"
           >
             {searchable && (
               <div className="p-2 border-b border-[var(--clockwork-border)]">
@@ -139,7 +139,7 @@ export function MultiSelect({
                   placeholder="Search..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full px-3 py-2 border border-[var(--clockwork-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--clockwork-orange)]/20"
+                  className="w-full px-3 py-2 border border-[var(--clockwork-border)] rounded-lg bg-[var(--clockwork-bg-secondary)] text-[var(--clockwork-gray-900)] placeholder:text-[var(--clockwork-gray-500)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--clockwork-orange)]/20"
                   onClick={(e) => e.stopPropagation()}
                 />
               </div>
@@ -159,7 +159,7 @@ export function MultiSelect({
                       onClick={() => handleToggle(option.value)}
                       className={cn(
                         'px-4 py-2.5 cursor-pointer flex items-center justify-between',
-                        'hover:bg-[var(--clockwork-gray-50)] transition-colors',
+                        'hover:bg-[var(--clockwork-bg-secondary)] transition-colors',
                         isSelected && 'bg-[var(--clockwork-orange-light)]'
                       )}
                     >
@@ -182,7 +182,7 @@ export function MultiSelect({
                     e.stopPropagation();
                     handleClear();
                   }}
-                  className="w-full px-3 py-2 text-sm text-[var(--clockwork-error)] hover:bg-red-50 rounded transition-colors"
+                  className="w-full px-3 py-2 text-sm text-[var(--clockwork-error)] hover:bg-[var(--clockwork-orange-light)] rounded transition-colors"
                 >
                   Clear all
                 </button>
