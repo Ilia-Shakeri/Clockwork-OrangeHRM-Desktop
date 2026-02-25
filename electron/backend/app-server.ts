@@ -6,7 +6,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import cors from "cors";
 import { z } from "zod";
 import { MySqlConnectionService } from "./db";
-import type { ReportPayload } from "./dtos";
+import type { PresencePayload, ReportPayload } from "./dtos";
 import { buildCsv, buildPdf } from "./exporters";
 import { PythonEnhancer } from "./python";
 import {
@@ -49,6 +49,33 @@ const reportRequestSchema = z.object({
   }),
 });
 
+function isValidIsoDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(year, month - 1, day, 12);
+
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.getFullYear() === year &&
+    parsed.getMonth() === month - 1 &&
+    parsed.getDate() === day
+  );
+}
+
+const presenceQuerySchema = z.object({
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine((value) => isValidIsoDate(value), "Invalid date. Expected YYYY-MM-DD.")
+    .optional(),
+});
+
 const reportPayloadSchema: z.ZodType<ReportPayload> = z.object({
   rows: z.array(
     z.object({
@@ -66,6 +93,27 @@ const reportPayloadSchema: z.ZodType<ReportPayload> = z.object({
     records: z.number(),
     users: z.number(),
   }),
+});
+
+const presencePayloadSchema: z.ZodType<PresencePayload> = z.object({
+  presenceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  totals: z.object({
+    inside: z.number(),
+    out: z.number(),
+    totalSeen: z.number(),
+  }),
+  rows: z.array(
+    z.object({
+      userId: z.string(),
+      username: z.string(),
+      fullName: z.string(),
+      firstCheckIn: z.string().nullable(),
+      lastCheckOut: z.string().nullable(),
+      status: z.enum(["inside", "out", "unknown"]),
+      workedHours: z.number(),
+      sinceCheckInMinutes: z.number().nullable().optional(),
+    }),
+  ),
 });
 
 const exportSchema = z.object({
@@ -102,6 +150,13 @@ function createRouteHandler(
 
 function normalizePath(filePath: string): string {
   return path.normalize(filePath);
+}
+
+function toLocalIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export async function startLocalApiServer(
@@ -216,6 +271,18 @@ export async function startLocalApiServer(
       const parsed = reportRequestSchema.parse(req.body);
       const report = await dbService.buildReport(parsed);
       res.json(report);
+    }),
+  );
+
+  api.get(
+    "/api/presence",
+    createRouteHandler(async (req, res) => {
+      const parsedQuery = presenceQuerySchema.parse({
+        date: typeof req.query.date === "string" ? req.query.date : undefined,
+      });
+      const dateIso = parsedQuery.date ?? toLocalIsoDate(new Date());
+      const payload = await dbService.getDailyPresence(dateIso);
+      res.json(presencePayloadSchema.parse(payload));
     }),
   );
 

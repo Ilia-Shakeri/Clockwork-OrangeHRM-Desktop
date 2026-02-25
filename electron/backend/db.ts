@@ -8,6 +8,7 @@ import {
 } from "date-fns-jalali";
 import type {
   ConnectionPayload,
+  PresencePayload,
   ReportPayload,
   ReportRequest,
   ReportRow,
@@ -23,6 +24,18 @@ interface AttendanceQueryRow extends RowDataPacket {
   checkIn: Date | string | null;
   checkOut: Date | string | null;
   hours: number | null;
+}
+
+interface PresenceQueryRow extends RowDataPacket {
+  userId: string | number;
+  username: string;
+  fullName: string | null;
+  firstCheckIn: Date | string | null;
+  lastCheckOut: Date | string | null;
+  workedSeconds: number | string | null;
+  hasOpenPunch: number | string | null;
+  hasCompletedPunch: number | string | null;
+  latestOpenCheckIn: Date | string | null;
 }
 
 interface UserQueryRow extends RowDataPacket {
@@ -62,6 +75,72 @@ function toNumber(value: number | null): number {
   }
 
   return Math.round(value * 100) / 100;
+}
+
+function toInteger(value: number | string | null): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return Math.trunc(parsed);
+    }
+  }
+
+  return 0;
+}
+
+function computeSinceCheckInMinutes(
+  dateIso: string,
+  value: Date | string | null,
+): number | null {
+  if (!value) {
+    return null;
+  }
+
+  let checkInDate: Date | null = null;
+
+  if (value instanceof Date) {
+    checkInDate = value;
+  } else {
+    const raw = String(value).trim();
+    if (!raw) {
+      return null;
+    }
+
+    const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+    const parsed = new Date(normalized);
+    if (!Number.isNaN(parsed.getTime())) {
+      checkInDate = parsed;
+    } else {
+      const timeMatch = /^(\d{2}):(\d{2})(?::\d{2})?$/.exec(raw);
+      const date = parseIsoDateInput(dateIso);
+      if (timeMatch && date) {
+        checkInDate = new Date(
+          date.getFullYear(),
+          date.getMonth(),
+          date.getDate(),
+          Number(timeMatch[1]),
+          Number(timeMatch[2]),
+          0,
+          0,
+        );
+      }
+    }
+  }
+
+  if (!checkInDate || Number.isNaN(checkInDate.getTime())) {
+    return null;
+  }
+
+  const diffMs = Date.now() - checkInDate.getTime();
+  if (diffMs <= 0) {
+    return 0;
+  }
+
+  return Math.floor(diffMs / 60000);
 }
 
 function isSchemaError(error: unknown): boolean {
@@ -448,6 +527,185 @@ export class MySqlConnectionService {
         user: lookup,
       };
     });
+  }
+
+  async getDailyPresence(dateIso: string): Promise<PresencePayload> {
+    const pool = this.getPool();
+    const parsedDate = parseIsoDateInput(dateIso);
+
+    if (!parsedDate) {
+      throw new Error("Invalid presence date. Expected YYYY-MM-DD.");
+    }
+
+    const normalizedDate = toLocalIsoDate(parsedDate);
+
+    const attempts: Array<{ name: string; sql: string; params: unknown[] }> = [
+      {
+        name: "attendance_record_user_time",
+        sql: `
+          SELECT
+            CAST(u.id AS CHAR) AS userId,
+            u.user_name AS username,
+            TRIM(CONCAT_WS(' ', e.first_name, e.middle_name, e.last_name)) AS fullName,
+            MIN(ar.punch_in_user_time) AS firstCheckIn,
+            MAX(ar.punch_out_user_time) AS lastCheckOut,
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN ar.punch_in_user_time IS NOT NULL AND ar.punch_out_user_time IS NOT NULL
+                    THEN TIMESTAMPDIFF(SECOND, ar.punch_in_user_time, ar.punch_out_user_time)
+                  ELSE 0
+                END
+              ),
+              0
+            ) AS workedSeconds,
+            MAX(
+              CASE
+                WHEN ar.punch_in_user_time IS NOT NULL AND ar.punch_out_user_time IS NULL THEN 1
+                ELSE 0
+              END
+            ) AS hasOpenPunch,
+            MAX(
+              CASE
+                WHEN ar.punch_in_user_time IS NOT NULL AND ar.punch_out_user_time IS NOT NULL THEN 1
+                ELSE 0
+              END
+            ) AS hasCompletedPunch,
+            MAX(
+              CASE
+                WHEN ar.punch_in_user_time IS NOT NULL AND ar.punch_out_user_time IS NULL
+                  THEN ar.punch_in_user_time
+                ELSE NULL
+              END
+            ) AS latestOpenCheckIn
+          FROM ohrm_attendance_record ar
+          INNER JOIN ohrm_user u ON u.emp_number = ar.employee_id
+          LEFT JOIN hs_hr_employee e ON e.emp_number = ar.employee_id
+          WHERE DATE(ar.punch_in_user_time) = ?
+          GROUP BY u.id, u.user_name, e.first_name, e.middle_name, e.last_name
+          ORDER BY u.user_name ASC
+        `,
+        params: [normalizedDate],
+      },
+      {
+        name: "attendance_record_utc_time",
+        sql: `
+          SELECT
+            CAST(u.id AS CHAR) AS userId,
+            u.user_name AS username,
+            TRIM(CONCAT_WS(' ', e.first_name, e.middle_name, e.last_name)) AS fullName,
+            MIN(ar.punch_in_utc_time) AS firstCheckIn,
+            MAX(ar.punch_out_utc_time) AS lastCheckOut,
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN ar.punch_in_utc_time IS NOT NULL AND ar.punch_out_utc_time IS NOT NULL
+                    THEN TIMESTAMPDIFF(SECOND, ar.punch_in_utc_time, ar.punch_out_utc_time)
+                  ELSE 0
+                END
+              ),
+              0
+            ) AS workedSeconds,
+            MAX(
+              CASE
+                WHEN ar.punch_in_utc_time IS NOT NULL AND ar.punch_out_utc_time IS NULL THEN 1
+                ELSE 0
+              END
+            ) AS hasOpenPunch,
+            MAX(
+              CASE
+                WHEN ar.punch_in_utc_time IS NOT NULL AND ar.punch_out_utc_time IS NOT NULL THEN 1
+                ELSE 0
+              END
+            ) AS hasCompletedPunch,
+            MAX(
+              CASE
+                WHEN ar.punch_in_utc_time IS NOT NULL AND ar.punch_out_utc_time IS NULL
+                  THEN ar.punch_in_utc_time
+                ELSE NULL
+              END
+            ) AS latestOpenCheckIn
+          FROM ohrm_attendance_record ar
+          INNER JOIN ohrm_user u ON u.emp_number = ar.employee_id
+          LEFT JOIN hs_hr_employee e ON e.emp_number = ar.employee_id
+          WHERE DATE(ar.punch_in_utc_time) = ?
+          GROUP BY u.id, u.user_name, e.first_name, e.middle_name, e.last_name
+          ORDER BY u.user_name ASC
+        `,
+        params: [normalizedDate],
+      },
+    ];
+
+    let rows: PresenceQueryRow[] = [];
+    const schemaErrors: string[] = [];
+
+    for (const attempt of attempts) {
+      try {
+        const [queryRows] = await pool.query<PresenceQueryRow[]>(
+          attempt.sql,
+          attempt.params,
+        );
+        rows = queryRows;
+        break;
+      } catch (error) {
+        if (isSchemaError(error)) {
+          schemaErrors.push(attempt.name);
+          continue;
+        }
+
+        throw new Error(mapMySqlError(error));
+      }
+    }
+
+    if (rows.length === 0 && schemaErrors.length === attempts.length) {
+      throw new Error(
+        `Attendance schema is unsupported. Tried: ${schemaErrors.join(", ")}.`,
+      );
+    }
+
+    const mappedRows: PresencePayload["rows"] = rows.map((row) => {
+      const hasOpenPunch = toInteger(row.hasOpenPunch) > 0;
+      const hasCompletedPunch = toInteger(row.hasCompletedPunch) > 0;
+      const workedSeconds = toInteger(row.workedSeconds);
+      const status = hasOpenPunch ? "inside" : hasCompletedPunch ? "out" : "unknown";
+
+      return {
+        userId: String(row.userId),
+        username: row.username,
+        fullName: row.fullName?.trim() || row.username,
+        firstCheckIn: formatTimeValue(row.firstCheckIn),
+        lastCheckOut: formatTimeValue(row.lastCheckOut),
+        status,
+        workedHours: toNumber(workedSeconds / 3600),
+        sinceCheckInMinutes:
+          status === "inside"
+            ? computeSinceCheckInMinutes(normalizedDate, row.latestOpenCheckIn)
+            : null,
+      };
+    });
+
+    const totals = mappedRows.reduce(
+      (accumulator, row) => {
+        if (row.status === "inside") {
+          accumulator.inside += 1;
+        } else if (row.status === "out") {
+          accumulator.out += 1;
+        }
+
+        return accumulator;
+      },
+      { inside: 0, out: 0 },
+    );
+
+    return {
+      presenceDate: normalizedDate,
+      totals: {
+        inside: totals.inside,
+        out: totals.out,
+        totalSeen: mappedRows.length,
+      },
+      rows: mappedRows,
+    };
   }
 
   async buildReport(input: ReportRequest): Promise<ReportPayload> {

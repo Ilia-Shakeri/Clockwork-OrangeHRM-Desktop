@@ -64,6 +64,31 @@ export interface ReportPayload {
   totals: ReportTotals;
 }
 
+export type PresenceStatus = "inside" | "out" | "unknown";
+
+export interface PresenceRow {
+  userId: string;
+  username: string;
+  fullName: string;
+  firstCheckIn: string | null;
+  lastCheckOut: string | null;
+  status: PresenceStatus;
+  workedHours: number;
+  sinceCheckInMinutes?: number | null;
+}
+
+export interface PresenceTotals {
+  inside: number;
+  out: number;
+  totalSeen: number;
+}
+
+export interface PresenceResponse {
+  presenceDate: string;
+  totals: PresenceTotals;
+  rows: PresenceRow[];
+}
+
 export interface ExportMeta {
   title: string;
   from: string;

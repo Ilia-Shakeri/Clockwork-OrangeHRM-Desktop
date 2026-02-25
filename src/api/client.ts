@@ -5,6 +5,7 @@ import type {
   ExportMeta,
   ExportFormat,
   HealthResponse,
+  PresenceResponse,
   PythonStatusResponse,
   PythonSummaryResponse,
   ReportPayload,
@@ -98,6 +99,11 @@ class ApiClient {
       method: "POST",
       json: payload,
     });
+  }
+
+  getPresence(dateIso?: string): Promise<PresenceResponse> {
+    const query = dateIso ? `?date=${encodeURIComponent(dateIso)}` : "";
+    return this.request<PresenceResponse>(`/api/presence${query}`);
   }
 
   exportReport(payload: {

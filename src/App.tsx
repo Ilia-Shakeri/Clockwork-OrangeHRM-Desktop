@@ -5,6 +5,7 @@ import { Reports } from "@/pages/Reports";
 import { BulkScan } from "@/pages/BulkScan";
 import { Exports } from "@/pages/Exports";
 import { Connections } from "@/pages/Connections";
+import { Presence } from "@/pages/Presence";
 import { Settings } from "@/pages/Settings";
 
 const router = createHashRouter([
@@ -15,6 +16,7 @@ const router = createHashRouter([
       { index: true, Component: Dashboard },
       { path: "reports", Component: Reports },
       { path: "bulk-scan", Component: BulkScan },
+      { path: "presence", Component: Presence },
       { path: "exports", Component: Exports },
       { path: "connections", Component: Connections },
       { path: "settings", Component: Settings },

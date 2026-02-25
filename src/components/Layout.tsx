@@ -7,6 +7,7 @@ import {
   ScanSearch,
   Settings,
   FileChartColumn,
+  Users,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { apiClient } from "@/api/client";
@@ -20,6 +21,7 @@ const navigationItems = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/reports", label: "Reports", icon: FileChartColumn },
   { to: "/bulk-scan", label: "Bulk Scan", icon: ScanSearch },
+  { to: "/presence", label: "Live Presence", icon: Users },
   { to: "/exports", label: "Exports", icon: Download },
   { to: "/connections", label: "Connections", icon: Cable },
   { to: "/settings", label: "Settings", icon: Settings },

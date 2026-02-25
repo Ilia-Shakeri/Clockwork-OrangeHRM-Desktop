@@ -105,7 +105,7 @@ export function Dashboard() {
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <Link to="/reports" className="rounded-lg border border-[var(--clockwork-border)] p-4 hover:border-[var(--clockwork-orange)]">
               <FileText className="mb-3 h-6 w-6 text-[var(--clockwork-orange)]" />
               <p className="font-semibold text-[var(--clockwork-gray-900)]">Generate Report</p>
@@ -120,6 +120,11 @@ export function Dashboard() {
               <Cable className="mb-3 h-6 w-6 text-[var(--clockwork-orange)]" />
               <p className="font-semibold text-[var(--clockwork-gray-900)]">Configure Connection</p>
               <p className="text-sm text-[var(--clockwork-gray-600)]">Test and persist MySQL settings</p>
+            </Link>
+            <Link to="/presence" className="rounded-lg border border-[var(--clockwork-border)] p-4 hover:border-[var(--clockwork-green)]">
+              <Users className="mb-3 h-6 w-6 text-[var(--clockwork-green)]" />
+              <p className="font-semibold text-[var(--clockwork-gray-900)]">Live Presence</p>
+              <p className="text-sm text-[var(--clockwork-gray-600)]">Monitor who is currently inside</p>
             </Link>
           </div>
         </CardContent>
