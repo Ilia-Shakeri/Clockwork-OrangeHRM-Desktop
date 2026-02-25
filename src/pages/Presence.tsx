@@ -194,20 +194,17 @@ export function Presence() {
           <div className="mt-3 flex flex-col items-center gap-1">
             <Button
               variant="secondary"
-              className="transform-gpu transition-all duration-150 hover:-translate-y-0.5 hover:shadow-[var(--clockwork-shadow-sm)] active:scale-95"
+              className="min-w-[132px] transform-gpu justify-center transition-all duration-150 hover:-translate-y-0.5 hover:shadow-[var(--clockwork-shadow-sm)]"
               onClick={() => void loadPresence(selectedDate, true)}
             >
-              {refreshing ? (
-                <>
+              <span className="inline-flex w-4 items-center justify-center">
+                {refreshing ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" />
-                  Refreshing...
-                </>
-              ) : (
-                <>
+                ) : (
                   <RefreshCw className="h-4 w-4" />
-                  Refresh
-                </>
-              )}
+                )}
+              </span>
+              <span>Refresh</span>
             </Button>
             <p className="text-center text-xs text-[var(--clockwork-gray-500)]">
               Auto-refresh: {refreshSeconds}s
