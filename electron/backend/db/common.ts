@@ -6,9 +6,8 @@ import {
   newDate as newJalaliDate,
 } from "date-fns-jalali";
 import type {
+  AppUser,
   ReportRequest,
-  ResolvedUserResult,
-  UserLookupResult,
 } from "../dtos";
 import type { UserQueryRow } from "./types";
 
@@ -230,36 +229,15 @@ export function computeSinceCheckInMinutes(
   return Math.floor(diffMs / 60000);
 }
 
-export function normalizeUsers(rows: UserQueryRow[]): UserLookupResult[] {
+export function normalizeUsers(rows: UserQueryRow[]): AppUser[] {
   return rows.map((row) => ({
-    id: String(row.id),
-    username: row.username,
-    fullName: row.fullName?.trim() || row.username,
+    id: typeof row.id === "number" ? row.id : String(row.id),
+    username: row.username?.trim() || String(row.id),
+    fullName: row.fullName?.trim() || row.username?.trim() || String(row.id),
+    email: row.email?.trim() || undefined,
+    employeeId:
+      row.employeeId === null || row.employeeId === undefined
+        ? undefined
+        : String(row.employeeId),
   }));
-}
-
-export function toResolvedUsers(
-  requestedUsernames: string[],
-  matchedUsers: UserLookupResult[],
-): ResolvedUserResult[] {
-  const byUsername = new Map<string, UserLookupResult>();
-  for (const user of matchedUsers) {
-    byUsername.set(user.username.toLowerCase(), user);
-  }
-
-  return requestedUsernames.map((username) => {
-    const lookup = byUsername.get(username.trim().toLowerCase());
-    if (!lookup) {
-      return {
-        username,
-        status: "not-found" as const,
-      };
-    }
-
-    return {
-      username,
-      status: "matched" as const,
-      user: lookup,
-    };
-  });
 }

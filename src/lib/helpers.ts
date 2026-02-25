@@ -217,12 +217,3 @@ export function suggestedExportFilename(
   const timestamp = new Date().toISOString().replace(/[:T-]/g, "").slice(0, 14);
   return `clockwork_report_${from}_to_${to}_${timestamp}.${format}`;
 }
-
-export function parseUsernamesFromText(input: string): string[] {
-  const raw = input
-    .split(/[\n,\s]+/)
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  return Array.from(new Set(raw));
-}

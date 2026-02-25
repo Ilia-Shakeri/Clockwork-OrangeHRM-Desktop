@@ -1,10 +1,10 @@
 import type {
+  AppUser,
   ConnectionPayload,
   PresencePayload,
   ReportPayload,
   ReportRequest,
-  ResolvedUserResult,
-  UserLookupResult,
+  UserQueryInput,
 } from "../dtos";
 
 export interface DbConnectionInfo {
@@ -19,8 +19,7 @@ export interface DbClient {
   setConnection(connection: ConnectionPayload): Promise<void>;
   ping(): Promise<void>;
   getConnectionInfo(): DbConnectionInfo | null;
-  searchUsers(query: string, limit?: number): Promise<UserLookupResult[]>;
-  resolveUsersByUsername(usernames: string[]): Promise<ResolvedUserResult[]>;
+  getUsers(input: UserQueryInput): Promise<AppUser[]>;
   getDailyPresence(dateIso: string): Promise<PresencePayload>;
   buildReport(input: ReportRequest): Promise<ReportPayload>;
 }
@@ -29,8 +28,7 @@ export interface DbAdapter {
   close(): Promise<void>;
   connect(connection: ConnectionPayload): Promise<void>;
   ping(): Promise<void>;
-  searchUsers(query: string, limit?: number): Promise<UserLookupResult[]>;
-  resolveUsersByUsername(usernames: string[]): Promise<ResolvedUserResult[]>;
+  getUsers(input: UserQueryInput): Promise<AppUser[]>;
   getDailyPresence(dateIso: string): Promise<PresencePayload>;
   buildReport(input: ReportRequest): Promise<ReportPayload>;
 }
@@ -67,6 +65,8 @@ export interface UserQueryRow {
   id: string | number;
   username: string;
   fullName: string | null;
+  email?: string | null;
+  employeeId?: string | number | null;
 }
 
 export type DbLogger = (message: string, details?: unknown) => void;

@@ -4,12 +4,12 @@ import mysql, {
   type RowDataPacket,
 } from "mysql2/promise";
 import type {
+  AppUser,
   ConnectionPayload,
   PresencePayload,
   ReportPayload,
   ReportRequest,
-  ResolvedUserResult,
-  UserLookupResult,
+  UserQueryInput,
 } from "../dtos";
 import {
   computeSinceCheckInMinutes,
@@ -22,7 +22,6 @@ import {
   toInteger,
   toLocalIsoDate,
   toNumber,
-  toResolvedUsers,
 } from "./common";
 import { createDialectHelpers } from "./query-builders/dialect";
 import type { DbAdapter, DbLogger, QueryAttempt } from "./types";
@@ -31,6 +30,8 @@ interface MySqlUserQueryRow extends RowDataPacket {
   id: string | number;
   username: string;
   fullName: string | null;
+  email: string | null;
+  employeeId: string | number | null;
 }
 
 interface MySqlAttendanceQueryRow extends RowDataPacket {
@@ -106,6 +107,17 @@ function mapMySqlError(error: unknown): string {
   }
 }
 
+function summarizeSchemaErrors(schemaErrors: Array<{ attempt: string; reason: string }>): string {
+  if (schemaErrors.length === 0) {
+    return "No schema diagnostics available.";
+  }
+
+  return schemaErrors
+    .map((error) => `${error.attempt}: ${error.reason}`)
+    .slice(0, 3)
+    .join(" | ");
+}
+
 export class MySqlMariaDbAdapter implements DbAdapter {
   private pool: Pool | null = null;
 
@@ -154,32 +166,91 @@ export class MySqlMariaDbAdapter implements DbAdapter {
     return this.pool;
   }
 
-  async searchUsers(query: string, limit = 20): Promise<UserLookupResult[]> {
+  async getUsers(input: UserQueryInput): Promise<AppUser[]> {
     const pool = this.getPool();
-    const safeLimit = Math.max(1, Math.min(100, limit));
-    const like = `%${query.trim()}%`;
-    const fullNameExpr = dialect.concatSpace([
+    const safeLimit = Math.max(1, Math.min(500, input.limit ?? 200));
+    const safeOffset = Math.max(0, Math.min(100000, input.offset ?? 0));
+    const normalizedQuery = (input.query ?? "").trim();
+    const hasQuery = normalizedQuery.length > 0;
+    const like = `%${normalizedQuery}%`;
+    const limitClause = dialect.limitOffset("?", "?");
+
+    const buildWhereClause = (
+      usernameExpr: string,
+      fullNameExpr: string,
+      emailExpr: string,
+      employeeIdExpr: string,
+    ): string => {
+      if (!hasQuery) {
+        return "";
+      }
+
+      return `
+        WHERE ${dialect.caseInsensitiveLike(usernameExpr, "?")}
+           OR ${dialect.caseInsensitiveLike(fullNameExpr, "?")}
+           OR ${dialect.caseInsensitiveLike(emailExpr, "?")}
+           OR ${dialect.caseInsensitiveLike(employeeIdExpr, "?")}
+      `;
+    };
+
+    const paramsFor = (predicateCount: number): unknown[] => {
+      if (!hasQuery) {
+        return [safeLimit, safeOffset];
+      }
+
+      return [...Array.from({ length: predicateCount }, () => like), safeLimit, safeOffset];
+    };
+
+    const modernFullNameExpr = dialect.concatSpace([
       "e.first_name",
       "e.middle_name",
       "e.last_name",
     ]);
+    const modernEmailExpr = "NULLIF(TRIM(COALESCE(e.work_email, '')), '')";
+    const modernEmployeeIdExpr = "CAST(e.employee_id AS CHAR)";
+
+    const legacyFullNameExpr = dialect.concatSpace([
+      "e.emp_firstname",
+      "e.emp_middle_name",
+      "e.emp_lastname",
+    ]);
+    const legacyEmailExpr = "NULLIF(TRIM(COALESCE(e.emp_work_email, '')), '')";
+    const legacyEmployeeIdExpr = "CAST(e.employee_id AS CHAR)";
 
     const attempts: QueryAttempt[] = [
       {
-        name: "ohrm_user+hs_hr_employee",
+        name: "ohrm_user+hs_hr_employee(modern)",
         sql: `
           SELECT
             CAST(u.id AS CHAR) AS id,
             u.user_name AS username,
-            ${fullNameExpr} AS fullName
+            ${modernFullNameExpr} AS fullName,
+            ${modernEmailExpr} AS email,
+            ${modernEmployeeIdExpr} AS employeeId
           FROM ohrm_user u
           LEFT JOIN hs_hr_employee e ON e.emp_number = u.emp_number
-          WHERE ${dialect.caseInsensitiveLike("u.user_name", "?")}
-             OR ${dialect.caseInsensitiveLike(fullNameExpr, "?")}
+          ${buildWhereClause("u.user_name", modernFullNameExpr, modernEmailExpr, modernEmployeeIdExpr)}
           ORDER BY u.user_name ASC
-          ${dialect.limitOffset("?")}
+          ${limitClause}
         `,
-        params: [like, like, safeLimit],
+        params: paramsFor(4),
+      },
+      {
+        name: "ohrm_user+hs_hr_employee(legacy)",
+        sql: `
+          SELECT
+            CAST(u.id AS CHAR) AS id,
+            u.user_name AS username,
+            ${legacyFullNameExpr} AS fullName,
+            ${legacyEmailExpr} AS email,
+            ${legacyEmployeeIdExpr} AS employeeId
+          FROM ohrm_user u
+          LEFT JOIN hs_hr_employee e ON e.emp_number = u.emp_number
+          ${buildWhereClause("u.user_name", legacyFullNameExpr, legacyEmailExpr, legacyEmployeeIdExpr)}
+          ORDER BY u.user_name ASC
+          ${limitClause}
+        `,
+        params: paramsFor(4),
       },
       {
         name: "ohrm_user",
@@ -187,43 +258,46 @@ export class MySqlMariaDbAdapter implements DbAdapter {
           SELECT
             CAST(u.id AS CHAR) AS id,
             u.user_name AS username,
-            u.user_name AS fullName
+            u.user_name AS fullName,
+            NULL AS email,
+            NULL AS employeeId
           FROM ohrm_user u
-          WHERE ${dialect.caseInsensitiveLike("u.user_name", "?")}
+          ${hasQuery ? `WHERE ${dialect.caseInsensitiveLike("u.user_name", "?")}` : ""}
           ORDER BY u.user_name ASC
-          ${dialect.limitOffset("?")}
+          ${limitClause}
         `,
-        params: [like, safeLimit],
+        params: hasQuery ? [like, safeLimit, safeOffset] : [safeLimit, safeOffset],
       },
       {
         name: "hs_hr_employee",
         sql: `
           SELECT
             CAST(e.emp_number AS CHAR) AS id,
-            e.employee_id AS username,
-            ${fullNameExpr} AS fullName
+            CAST(e.employee_id AS CHAR) AS username,
+            ${modernFullNameExpr} AS fullName,
+            ${modernEmailExpr} AS email,
+            CAST(e.employee_id AS CHAR) AS employeeId
           FROM hs_hr_employee e
-          WHERE ${dialect.caseInsensitiveLike("e.employee_id", "?")}
-             OR ${dialect.caseInsensitiveLike(fullNameExpr, "?")}
+          ${buildWhereClause("e.employee_id", modernFullNameExpr, modernEmailExpr, "e.employee_id")}
           ORDER BY e.employee_id ASC
-          ${dialect.limitOffset("?")}
+          ${limitClause}
         `,
-        params: [like, like, safeLimit],
+        params: paramsFor(4),
       },
     ];
 
-    const schemaErrors: string[] = [];
+    const schemaErrors: Array<{ attempt: string; reason: string }> = [];
 
     for (const attempt of attempts) {
       try {
-        const [rows] = await pool.query<MySqlUserQueryRow[]>(
-          attempt.sql,
-          attempt.params,
-        );
+        const [rows] = await pool.query<MySqlUserQueryRow[]>(attempt.sql, attempt.params);
         return normalizeUsers(rows);
       } catch (error) {
         if (isSchemaError(error)) {
-          schemaErrors.push(attempt.name);
+          schemaErrors.push({
+            attempt: attempt.name,
+            reason: error instanceof Error ? error.message : "Schema mismatch",
+          });
           continue;
         }
 
@@ -232,82 +306,11 @@ export class MySqlMariaDbAdapter implements DbAdapter {
     }
 
     throw new Error(
-      `Unable to read users because the OrangeHRM schema did not match expected tables (${schemaErrors.join(", ")}).`,
+      "Unable to load users from OrangeHRM. Verify tables/columns such as " +
+        "`ohrm_user.user_name`, `ohrm_user.emp_number`, `hs_hr_employee.emp_number`, " +
+        "`hs_hr_employee.employee_id`, name columns, and optional email columns. " +
+        summarizeSchemaErrors(schemaErrors),
     );
-  }
-
-  async resolveUsersByUsername(usernames: string[]): Promise<ResolvedUserResult[]> {
-    const pool = this.getPool();
-    const normalizedLookup = usernames.map((username) => username.trim().toLowerCase());
-    const uniqueLookup = Array.from(new Set(normalizedLookup));
-
-    if (uniqueLookup.length === 0) {
-      return [];
-    }
-
-    const placeholders = uniqueLookup.map(() => "?").join(",");
-    const fullNameExpr = dialect.concatSpace([
-      "e.first_name",
-      "e.middle_name",
-      "e.last_name",
-    ]);
-
-    const attempts: QueryAttempt[] = [
-      {
-        name: "ohrm_user+hs_hr_employee",
-        sql: `
-          SELECT
-            CAST(u.id AS CHAR) AS id,
-            u.user_name AS username,
-            ${fullNameExpr} AS fullName
-          FROM ohrm_user u
-          LEFT JOIN hs_hr_employee e ON e.emp_number = u.emp_number
-          WHERE LOWER(u.user_name) IN (${placeholders})
-        `,
-        params: uniqueLookup,
-      },
-      {
-        name: "ohrm_user",
-        sql: `
-          SELECT
-            CAST(u.id AS CHAR) AS id,
-            u.user_name AS username,
-            u.user_name AS fullName
-          FROM ohrm_user u
-          WHERE LOWER(u.user_name) IN (${placeholders})
-        `,
-        params: uniqueLookup,
-      },
-    ];
-
-    let matchedUsers: UserLookupResult[] = [];
-    const schemaErrors: string[] = [];
-
-    for (const attempt of attempts) {
-      try {
-        const [rows] = await pool.query<MySqlUserQueryRow[]>(
-          attempt.sql,
-          attempt.params,
-        );
-        matchedUsers = normalizeUsers(rows);
-        break;
-      } catch (error) {
-        if (isSchemaError(error)) {
-          schemaErrors.push(attempt.name);
-          continue;
-        }
-
-        throw new Error(mapMySqlError(error));
-      }
-    }
-
-    if (matchedUsers.length === 0 && schemaErrors.length === attempts.length) {
-      throw new Error(
-        `Unable to resolve users because OrangeHRM user tables were not found (${schemaErrors.join(", ")}).`,
-      );
-    }
-
-    return toResolvedUsers(usernames, matchedUsers);
   }
 
   async getDailyPresence(dateIso: string): Promise<PresencePayload> {

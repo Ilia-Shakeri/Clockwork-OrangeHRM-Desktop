@@ -2,7 +2,7 @@ import { Navigate, RouterProvider, createHashRouter } from "react-router";
 import { Layout } from "@/components/Layout";
 import { Dashboard } from "@/pages/Dashboard";
 import { Reports } from "@/pages/Reports";
-import { BulkScan } from "@/pages/BulkScan";
+import { UsersPage } from "@/pages/Users";
 import { Exports } from "@/pages/Exports";
 import { Connections } from "@/pages/Connections";
 import { Presence } from "@/pages/Presence";
@@ -14,8 +14,8 @@ const router = createHashRouter([
     Component: Layout,
     children: [
       { index: true, Component: Dashboard },
+      { path: "users", Component: UsersPage },
       { path: "reports", Component: Reports },
-      { path: "bulk-scan", Component: BulkScan },
       { path: "presence", Component: Presence },
       { path: "exports", Component: Exports },
       { path: "connections", Component: Connections },

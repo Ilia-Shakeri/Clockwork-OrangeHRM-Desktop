@@ -1,6 +1,5 @@
 export type DateRangePreset = "current" | "last" | "payroll-cycle" | "custom";
 export type ExportFormat = "pdf" | "csv";
-export type BulkScanMode = "combined" | "per-user";
 export type DateDisplayCalendar = "gregorian" | "shamsi";
 export type DatabaseEngine = "mariadb" | "mysql" | "postgres" | "sqlite";
 
@@ -90,16 +89,27 @@ export interface ExportHistoryItem {
   totalHours: number;
 }
 
-export interface UserLookupResult {
-  id: string;
+export interface AppUser {
+  id: string | number;
   username: string;
   fullName: string;
+  email?: string;
+  employeeId?: string;
 }
 
-export interface ResolvedUserResult {
-  username: string;
-  status: "matched" | "not-found" | "invalid";
-  user?: UserLookupResult;
+export interface UserQueryInput {
+  query?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface UserGroup {
+  id: string;
+  name: string;
+  description?: string;
+  memberIds: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface UiSettings {
@@ -109,11 +119,11 @@ export interface UiSettings {
   defaultCalendar: DateDisplayCalendar;
   defaultPresenceRefreshSeconds: number;
   usernameValidationRegex: string;
-  bulkScanMode: BulkScanMode;
 }
 
 export interface PersistedState {
   connection: ConnectionPayload | null;
   settings: UiSettings;
   exportHistory: ExportHistoryItem[];
+  userGroups: UserGroup[];
 }

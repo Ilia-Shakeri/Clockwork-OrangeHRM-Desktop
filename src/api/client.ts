@@ -1,4 +1,5 @@
 import type {
+  AppUser,
   ConnectionPayload,
   DateRangeInput,
   ExportHistoryItem,
@@ -9,10 +10,9 @@ import type {
   PythonStatusResponse,
   PythonSummaryResponse,
   ReportPayload,
-  ResolvedUserResult,
   SettingsResponse,
   UiSettings,
-  UserLookupResult,
+  UserGroup,
 } from "@/types/api";
 
 interface RequestInitJson extends RequestInit {
@@ -79,16 +79,65 @@ class ApiClient {
     });
   }
 
-  searchUsers(query: string): Promise<{ users: UserLookupResult[] }> {
-    const encoded = encodeURIComponent(query);
-    return this.request<{ users: UserLookupResult[] }>(`/api/users?query=${encoded}`);
+  getUsers(params?: {
+    query?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ users: AppUser[] }> {
+    const searchParams = new URLSearchParams();
+    if (params?.query) {
+      searchParams.set("query", params.query);
+    }
+    if (params?.limit !== undefined) {
+      searchParams.set("limit", String(params.limit));
+    }
+    if (params?.offset !== undefined) {
+      searchParams.set("offset", String(params.offset));
+    }
+
+    const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+    return this.request<{ users: AppUser[] }>(`/api/users${suffix}`);
   }
 
-  resolveUsers(usernames: string[]): Promise<{ users: ResolvedUserResult[] }> {
-    return this.request<{ users: ResolvedUserResult[] }>("/api/users/resolve", {
+  getUserGroups(): Promise<{ groups: UserGroup[] }> {
+    return this.request<{ groups: UserGroup[] }>("/api/user-groups");
+  }
+
+  createUserGroup(payload: {
+    name: string;
+    description?: string;
+    memberIds: string[];
+  }): Promise<{ group: UserGroup; groups: UserGroup[] }> {
+    return this.request<{ group: UserGroup; groups: UserGroup[] }>("/api/user-groups", {
       method: "POST",
-      json: { usernames },
+      json: payload,
     });
+  }
+
+  updateUserGroup(
+    groupId: string,
+    payload: {
+      name?: string;
+      description?: string | null;
+      memberIds?: string[];
+    },
+  ): Promise<{ group: UserGroup; groups: UserGroup[] }> {
+    return this.request<{ group: UserGroup; groups: UserGroup[] }>(
+      `/api/user-groups/${encodeURIComponent(groupId)}`,
+      {
+        method: "PATCH",
+        json: payload,
+      },
+    );
+  }
+
+  deleteUserGroup(groupId: string): Promise<{ ok: boolean; groups: UserGroup[] }> {
+    return this.request<{ ok: boolean; groups: UserGroup[] }>(
+      `/api/user-groups/${encodeURIComponent(groupId)}`,
+      {
+        method: "DELETE",
+      },
+    );
   }
 
   runReport(payload: {

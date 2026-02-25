@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { Cable, Download, FileText, HeartPulse, ScanSearch, Users } from "lucide-react";
+import { Cable, Download, FileText, HeartPulse, User, Users } from "lucide-react";
 import { apiClient } from "@/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/Card";
 import { Button } from "@/app/components/Button";
@@ -115,10 +115,10 @@ export function Dashboard() {
               <p className="font-semibold text-[var(--clockwork-gray-900)]">Generate Report</p>
               <p className="text-sm text-[var(--clockwork-gray-600)]">Run filtered attendance reports</p>
             </Link>
-            <Link to="/bulk-scan" className="rounded-lg border border-[var(--clockwork-border)] p-4 hover:border-[var(--clockwork-green)]">
-              <ScanSearch className="mb-3 h-6 w-6 text-[var(--clockwork-green)]" />
-              <p className="font-semibold text-[var(--clockwork-gray-900)]">Bulk Scan</p>
-              <p className="text-sm text-[var(--clockwork-gray-600)]">Process usernames from users.txt</p>
+            <Link to="/users" className="rounded-lg border border-[var(--clockwork-border)] p-4 hover:border-[var(--clockwork-green)]">
+              <User className="mb-3 h-6 w-6 text-[var(--clockwork-green)]" />
+              <p className="font-semibold text-[var(--clockwork-gray-900)]">Users</p>
+              <p className="text-sm text-[var(--clockwork-gray-600)]">Manage users and saved groups</p>
             </Link>
             <Link to="/connections" className="rounded-lg border border-[var(--clockwork-border)] p-4 hover:border-[var(--clockwork-orange)]">
               <Cable className="mb-3 h-6 w-6 text-[var(--clockwork-orange)]" />

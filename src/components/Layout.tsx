@@ -4,9 +4,9 @@ import {
   Cable,
   Download,
   LayoutDashboard,
-  ScanSearch,
   Settings,
   FileChartColumn,
+  User,
   Users,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
@@ -19,9 +19,9 @@ import mainLogo from "@/assets/Main-Logo.png";
 
 const navigationItems = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/users", label: "Users", icon: User },
   { to: "/presence", label: "Live Presence", icon: Users },
   { to: "/reports", label: "Reports", icon: FileChartColumn },
-  { to: "/bulk-scan", label: "Bulk Scan", icon: ScanSearch },
   { to: "/exports", label: "Exports", icon: Download },
   { to: "/connections", label: "Connections", icon: Cable },
   { to: "/settings", label: "Settings", icon: Settings },

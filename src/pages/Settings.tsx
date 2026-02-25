@@ -19,7 +19,6 @@ const DEFAULT_SETTINGS: UiSettings = {
   defaultCalendar: "shamsi",
   defaultPresenceRefreshSeconds: 30,
   usernameValidationRegex: "^[A-Za-z]{2}\\.[A-Za-z][A-Za-z0-9_-]*$",
-  bulkScanMode: "combined",
 };
 
 const PRESENCE_REFRESH_OPTIONS = [
@@ -291,45 +290,6 @@ export function Settings() {
               </select>
             </div>
 
-            <div>
-              <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-700)]">
-                Bulk Scan Mode
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant={
-                    settings.bulkScanMode === "combined"
-                      ? "primary"
-                      : "secondary"
-                  }
-                  onClick={() =>
-                    setSettings((current) => ({
-                      ...current,
-                      bulkScanMode: "combined",
-                    }))
-                  }
-                >
-                  Combined
-                </Button>
-                <Button
-                  size="sm"
-                  variant={
-                    settings.bulkScanMode === "per-user"
-                      ? "primary"
-                      : "secondary"
-                  }
-                  onClick={() =>
-                    setSettings((current) => ({
-                      ...current,
-                      bulkScanMode: "per-user",
-                    }))
-                  }
-                >
-                  Per User
-                </Button>
-              </div>
-            </div>
           </div>
         </CardContent>
       </Card>

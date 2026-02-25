@@ -1,11 +1,11 @@
 import { Pool, type PoolConfig } from "pg";
 import type {
+  AppUser,
   ConnectionPayload,
   PresencePayload,
   ReportPayload,
   ReportRequest,
-  ResolvedUserResult,
-  UserLookupResult,
+  UserQueryInput,
 } from "../dtos";
 import {
   computeSinceCheckInMinutes,
@@ -18,7 +18,6 @@ import {
   toInteger,
   toLocalIsoDate,
   toNumber,
-  toResolvedUsers,
 } from "./common";
 import { createDialectHelpers } from "./query-builders/dialect";
 import type {
@@ -81,6 +80,17 @@ function mapPostgresError(error: unknown): string {
   }
 }
 
+function summarizeSchemaErrors(schemaErrors: Array<{ attempt: string; reason: string }>): string {
+  if (schemaErrors.length === 0) {
+    return "No schema diagnostics available.";
+  }
+
+  return schemaErrors
+    .map((error) => `${error.attempt}: ${error.reason}`)
+    .slice(0, 3)
+    .join(" | ");
+}
+
 export class PostgresAdapter implements DbAdapter {
   private pool: Pool | null = null;
 
@@ -132,32 +142,69 @@ export class PostgresAdapter implements DbAdapter {
     return this.pool;
   }
 
-  async searchUsers(query: string, limit = 20): Promise<UserLookupResult[]> {
+  async getUsers(input: UserQueryInput): Promise<AppUser[]> {
     const pool = this.getPool();
-    const safeLimit = Math.max(1, Math.min(100, limit));
-    const like = `%${query.trim()}%`;
-    const fullNameExpr = dialect.concatSpace([
+    const safeLimit = Math.max(1, Math.min(500, input.limit ?? 200));
+    const safeOffset = Math.max(0, Math.min(100000, input.offset ?? 0));
+    const like = `%${(input.query ?? "").trim()}%`;
+    const limitClause = dialect.limitOffset("$5", "$6");
+
+    const modernFullNameExpr = dialect.concatSpace([
       "e.first_name",
       "e.middle_name",
       "e.last_name",
     ]);
+    const modernEmailExpr = "NULLIF(TRIM(COALESCE(e.work_email, '')), '')";
+    const modernEmployeeIdExpr = "CAST(e.employee_id AS TEXT)";
+
+    const legacyFullNameExpr = dialect.concatSpace([
+      "e.emp_firstname",
+      "e.emp_middle_name",
+      "e.emp_lastname",
+    ]);
+    const legacyEmailExpr = "NULLIF(TRIM(COALESCE(e.emp_work_email, '')), '')";
+    const legacyEmployeeIdExpr = "CAST(e.employee_id AS TEXT)";
 
     const attempts: QueryAttempt[] = [
       {
-        name: "ohrm_user+hs_hr_employee",
+        name: "ohrm_user+hs_hr_employee(modern)",
         sql: `
           SELECT
             CAST(u.id AS TEXT) AS id,
             u.user_name AS username,
-            ${fullNameExpr} AS "fullName"
+            ${modernFullNameExpr} AS "fullName",
+            ${modernEmailExpr} AS email,
+            ${modernEmployeeIdExpr} AS "employeeId"
           FROM ohrm_user u
           LEFT JOIN hs_hr_employee e ON e.emp_number = u.emp_number
           WHERE ${dialect.caseInsensitiveLike("u.user_name", "$1")}
-             OR ${dialect.caseInsensitiveLike(fullNameExpr, "$2")}
+             OR ${dialect.caseInsensitiveLike(modernFullNameExpr, "$2")}
+             OR ${dialect.caseInsensitiveLike(modernEmailExpr, "$3")}
+             OR ${dialect.caseInsensitiveLike(modernEmployeeIdExpr, "$4")}
           ORDER BY u.user_name ASC
-          ${dialect.limitOffset("$3")}
+          ${limitClause}
         `,
-        params: [like, like, safeLimit],
+        params: [like, like, like, like, safeLimit, safeOffset],
+      },
+      {
+        name: "ohrm_user+hs_hr_employee(legacy)",
+        sql: `
+          SELECT
+            CAST(u.id AS TEXT) AS id,
+            u.user_name AS username,
+            ${legacyFullNameExpr} AS "fullName",
+            ${legacyEmailExpr} AS email,
+            ${legacyEmployeeIdExpr} AS "employeeId"
+          FROM ohrm_user u
+          LEFT JOIN hs_hr_employee e ON e.emp_number = u.emp_number
+          WHERE ${dialect.caseInsensitiveLike("u.user_name", "$1")}
+             OR ${dialect.caseInsensitiveLike(legacyFullNameExpr, "$2")}
+             OR ${dialect.caseInsensitiveLike(legacyEmailExpr, "$3")}
+             OR ${dialect.caseInsensitiveLike(legacyEmployeeIdExpr, "$4")}
+          ORDER BY u.user_name ASC
+          ${limitClause}
+        `,
+        params: [like, like, like, like, safeLimit, safeOffset],
       },
       {
         name: "ohrm_user",
@@ -165,32 +212,41 @@ export class PostgresAdapter implements DbAdapter {
           SELECT
             CAST(u.id AS TEXT) AS id,
             u.user_name AS username,
-            u.user_name AS "fullName"
+            u.user_name AS "fullName",
+            NULL AS email,
+            NULL AS "employeeId"
           FROM ohrm_user u
           WHERE ${dialect.caseInsensitiveLike("u.user_name", "$1")}
+             OR ${dialect.caseInsensitiveLike("u.user_name", "$2")}
+             OR '' ILIKE $3
+             OR '' ILIKE $4
           ORDER BY u.user_name ASC
-          ${dialect.limitOffset("$2")}
+          ${limitClause}
         `,
-        params: [like, safeLimit],
+        params: [like, like, like, like, safeLimit, safeOffset],
       },
       {
         name: "hs_hr_employee",
         sql: `
           SELECT
             CAST(e.emp_number AS TEXT) AS id,
-            e.employee_id AS username,
-            ${fullNameExpr} AS "fullName"
+            CAST(e.employee_id AS TEXT) AS username,
+            ${modernFullNameExpr} AS "fullName",
+            ${modernEmailExpr} AS email,
+            CAST(e.employee_id AS TEXT) AS "employeeId"
           FROM hs_hr_employee e
           WHERE ${dialect.caseInsensitiveLike("e.employee_id", "$1")}
-             OR ${dialect.caseInsensitiveLike(fullNameExpr, "$2")}
+             OR ${dialect.caseInsensitiveLike(modernFullNameExpr, "$2")}
+             OR ${dialect.caseInsensitiveLike(modernEmailExpr, "$3")}
+             OR ${dialect.caseInsensitiveLike("CAST(e.employee_id AS TEXT)", "$4")}
           ORDER BY e.employee_id ASC
-          ${dialect.limitOffset("$3")}
+          ${limitClause}
         `,
-        params: [like, like, safeLimit],
+        params: [like, like, like, like, safeLimit, safeOffset],
       },
     ];
 
-    const schemaErrors: string[] = [];
+    const schemaErrors: Array<{ attempt: string; reason: string }> = [];
 
     for (const attempt of attempts) {
       try {
@@ -198,7 +254,10 @@ export class PostgresAdapter implements DbAdapter {
         return normalizeUsers(result.rows);
       } catch (error) {
         if (isSchemaError(error)) {
-          schemaErrors.push(attempt.name);
+          schemaErrors.push({
+            attempt: attempt.name,
+            reason: error instanceof Error ? error.message : "Schema mismatch",
+          });
           continue;
         }
 
@@ -207,79 +266,11 @@ export class PostgresAdapter implements DbAdapter {
     }
 
     throw new Error(
-      `Unable to read users because the OrangeHRM schema did not match expected tables (${schemaErrors.join(", ")}).`,
+      "Unable to load users from OrangeHRM. Verify tables/columns such as " +
+        "`ohrm_user.user_name`, `ohrm_user.emp_number`, `hs_hr_employee.emp_number`, " +
+        "`hs_hr_employee.employee_id`, name columns, and optional email columns. " +
+        summarizeSchemaErrors(schemaErrors),
     );
-  }
-
-  async resolveUsersByUsername(usernames: string[]): Promise<ResolvedUserResult[]> {
-    const pool = this.getPool();
-    const normalizedLookup = usernames.map((username) => username.trim().toLowerCase());
-    const uniqueLookup = Array.from(new Set(normalizedLookup));
-
-    if (uniqueLookup.length === 0) {
-      return [];
-    }
-
-    const placeholders = buildPostgresPlaceholders(uniqueLookup.length);
-    const fullNameExpr = dialect.concatSpace([
-      "e.first_name",
-      "e.middle_name",
-      "e.last_name",
-    ]);
-
-    const attempts: QueryAttempt[] = [
-      {
-        name: "ohrm_user+hs_hr_employee",
-        sql: `
-          SELECT
-            CAST(u.id AS TEXT) AS id,
-            u.user_name AS username,
-            ${fullNameExpr} AS "fullName"
-          FROM ohrm_user u
-          LEFT JOIN hs_hr_employee e ON e.emp_number = u.emp_number
-          WHERE LOWER(u.user_name) IN (${placeholders})
-        `,
-        params: uniqueLookup,
-      },
-      {
-        name: "ohrm_user",
-        sql: `
-          SELECT
-            CAST(u.id AS TEXT) AS id,
-            u.user_name AS username,
-            u.user_name AS "fullName"
-          FROM ohrm_user u
-          WHERE LOWER(u.user_name) IN (${placeholders})
-        `,
-        params: uniqueLookup,
-      },
-    ];
-
-    let matchedUsers: UserLookupResult[] = [];
-    const schemaErrors: string[] = [];
-
-    for (const attempt of attempts) {
-      try {
-        const result = await pool.query<UserQueryRow>(attempt.sql, attempt.params);
-        matchedUsers = normalizeUsers(result.rows);
-        break;
-      } catch (error) {
-        if (isSchemaError(error)) {
-          schemaErrors.push(attempt.name);
-          continue;
-        }
-
-        throw new Error(mapPostgresError(error));
-      }
-    }
-
-    if (matchedUsers.length === 0 && schemaErrors.length === attempts.length) {
-      throw new Error(
-        `Unable to resolve users because OrangeHRM user tables were not found (${schemaErrors.join(", ")}).`,
-      );
-    }
-
-    return toResolvedUsers(usernames, matchedUsers);
   }
 
   async getDailyPresence(dateIso: string): Promise<PresencePayload> {

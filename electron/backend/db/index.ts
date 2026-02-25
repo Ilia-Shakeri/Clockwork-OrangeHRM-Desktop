@@ -1,10 +1,10 @@
 import type {
+  AppUser,
   ConnectionPayload,
   PresencePayload,
   ReportPayload,
   ReportRequest,
-  ResolvedUserResult,
-  UserLookupResult,
+  UserQueryInput,
 } from "../dtos";
 import { NO_DB_CONNECTION_ERROR } from "./common";
 import {
@@ -110,14 +110,9 @@ class MultiDbClient implements DbClient {
     };
   }
 
-  async searchUsers(query: string, limit?: number): Promise<UserLookupResult[]> {
+  async getUsers(input: UserQueryInput): Promise<AppUser[]> {
     const adapter = this.getAdapter();
-    return adapter.searchUsers(query, limit);
-  }
-
-  async resolveUsersByUsername(usernames: string[]): Promise<ResolvedUserResult[]> {
-    const adapter = this.getAdapter();
-    return adapter.resolveUsersByUsername(usernames);
+    return adapter.getUsers(input);
   }
 
   async getDailyPresence(dateIso: string): Promise<PresencePayload> {

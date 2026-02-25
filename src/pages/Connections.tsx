@@ -125,7 +125,7 @@ export function Connections() {
         </div>
         <PageHelpButton
           title="Connections Help"
-          overview="Configure the database connection used by reports, scans, and live presence."
+          overview="Configure the database connection used by users, reports, and live presence."
           steps={[
             "Select database engine and provide connection details.",
             "Click Test Connection and Save to validate and persist settings.",

@@ -3,6 +3,7 @@ import type {
   ConnectionPayload,
   ExportHistoryItem,
   PersistedState,
+  UserGroup,
   UiSettings,
 } from "./dtos";
 import { normalizeConnectionPayload } from "./db/index";
@@ -24,7 +25,6 @@ const DEFAULT_SETTINGS: UiSettings = {
   defaultCalendar: "shamsi",
   defaultPresenceRefreshSeconds: 30,
   usernameValidationRegex: "^[A-Za-z]{2}\\.[A-Za-z][A-Za-z0-9_-]*$",
-  bulkScanMode: "combined",
 };
 
 function normalizeSettings(settings: Partial<UiSettings> | null | undefined): UiSettings {
@@ -52,6 +52,7 @@ export function createConfigStore(): ConfigStore {
       connection: null,
       settings: DEFAULT_SETTINGS,
       exportHistory: [],
+      userGroups: [],
     },
   }) as unknown as ConfigStore;
 }
@@ -116,11 +117,32 @@ export function addExportHistory(
   return next;
 }
 
+export function getUserGroups(store: ConfigStore): UserGroup[] {
+  return store.get("userGroups");
+}
+
+export function replaceUserGroups(
+  store: ConfigStore,
+  groups: UserGroup[],
+): UserGroup[] {
+  const normalized = groups.map((group) => ({
+    ...group,
+    name: group.name.trim(),
+    description: group.description?.trim() || undefined,
+    memberIds: Array.from(
+      new Set(group.memberIds.map((memberId) => memberId.trim()).filter(Boolean)),
+    ),
+  }));
+  store.set("userGroups", normalized);
+  return normalized;
+}
+
 export function resetStore(store: ConfigStore): void {
   store.clear();
   store.set({
     connection: null,
     settings: DEFAULT_SETTINGS,
     exportHistory: [],
+    userGroups: [],
   });
 }

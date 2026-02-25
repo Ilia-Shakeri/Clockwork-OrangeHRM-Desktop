@@ -1,12 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Bot, Download, LoaderCircle, Search } from "lucide-react";
+﻿import { useEffect, useMemo, useState } from "react";
+import {
+  AlertCircle,
+  Bot,
+  Download,
+  LoaderCircle,
+  RefreshCw,
+  Search,
+  Users,
+} from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api/client";
 import { Button } from "@/app/components/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/Card";
 import { DataTable } from "@/app/components/DataTable";
-import { Input } from "@/app/components/Input";
-import { MultiSelect } from "@/app/components/MultiSelect";
 import { JalaliDatePicker } from "@/components/JalaliDatePicker";
 import { PageHelpButton } from "@/components/PageHelpButton";
 import {
@@ -17,19 +23,35 @@ import {
   formatHours,
   suggestedExportFilename,
 } from "@/lib/helpers";
+import {
+  filterExistingMemberIds,
+  loadUserGroups,
+  normalizeMemberIds,
+  resolveGroupMembers,
+} from "@/lib/user-groups";
+import { fetchAllUsers, getUserId } from "@/lib/users";
 import type {
+  AppUser,
   DateDisplayCalendar,
   DateRangePreset,
   ExportFormat,
   PythonSummaryResponse,
   ReportPayload,
   ReportRow,
+  UserGroup,
 } from "@/types/api";
 
+const USER_PAGE_SIZE = 30;
+
+type SelectionMode = "users" | "group";
+
 export function Reports() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [userOptions, setUserOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>("users");
+  const [users, setUsers] = useState<AppUser[]>([]);
+  const [groups, setGroups] = useState<UserGroup[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [userPage, setUserPage] = useState(1);
 
   const [datePreset, setDatePreset] = useState<DateRangePreset>("current");
   const [customDateRange, setCustomDateRange] = useState(() => defaultRangeForPreset("current"));
@@ -44,6 +66,11 @@ export function Reports() {
   const [pythonMessage, setPythonMessage] = useState("Checking Python support...");
   const [summary, setSummary] = useState<PythonSummaryResponse | null>(null);
   const [summarizing, setSummarizing] = useState(false);
+
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [loadingGroups, setLoadingGroups] = useState(true);
+  const [usersError, setUsersError] = useState("");
+  const [groupsError, setGroupsError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -63,7 +90,6 @@ export function Reports() {
         setDatePreset(settingsResponse.settings.defaultDatePreset);
         setCustomDateRange(defaultRangeForPreset(settingsResponse.settings.defaultDatePreset));
         setDefaultCalendar(settingsResponse.settings.defaultCalendar);
-
         setPythonAvailable(pythonStatus.available);
         setPythonMessage(pythonStatus.message);
       } catch (error) {
@@ -82,38 +108,99 @@ export function Reports() {
     };
   }, []);
 
+  const loadUsersAndGroups = async () => {
+    setLoadingUsers(true);
+    setLoadingGroups(true);
+
+    try {
+      const [fetchedUsers, fetchedGroups] = await Promise.all([fetchAllUsers(), loadUserGroups()]);
+      setUsers(fetchedUsers);
+      setGroups(fetchedGroups);
+      setUsersError("");
+      setGroupsError("");
+
+      setSelectedGroupId((current) => {
+        if (current && fetchedGroups.some((group) => group.id === current)) {
+          return current;
+        }
+
+        return fetchedGroups[0]?.id ?? "";
+      });
+
+      const validIds = new Set(fetchedUsers.map((user) => getUserId(user)));
+      setSelectedUserIds((current) => current.filter((memberId) => validIds.has(memberId)));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load users/groups";
+      setUsersError(message);
+      setGroupsError(message);
+      toast.error(message);
+    } finally {
+      setLoadingUsers(false);
+      setLoadingGroups(false);
+    }
+  };
+
   useEffect(() => {
-    let active = true;
+    void loadUsersAndGroups();
+  }, []);
 
-    const timer = setTimeout(() => {
-      apiClient
-        .searchUsers(searchQuery)
-        .then(({ users }) => {
-          if (!active) {
-            return;
-          }
+  const activeGroup = useMemo(
+    () => groups.find((group) => group.id === selectedGroupId) ?? null,
+    [groups, selectedGroupId],
+  );
 
-          setUserOptions(
-            users.map((user) => ({
-              value: user.id,
-              label: `${user.fullName} (${user.username})`,
-            })),
-          );
-        })
-        .catch((error) => {
-          if (!active) {
-            return;
-          }
+  useEffect(() => {
+    if (selectionMode !== "group") {
+      return;
+    }
 
-          toast.error(error instanceof Error ? error.message : "Failed to search users");
-        });
-    }, 250);
+    if (!activeGroup) {
+      setSelectedUserIds([]);
+      return;
+    }
 
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [searchQuery]);
+    setSelectedUserIds(normalizeMemberIds(activeGroup.memberIds));
+  }, [activeGroup, selectionMode]);
+
+  const userPages = Math.max(1, Math.ceil(users.length / USER_PAGE_SIZE));
+  useEffect(() => {
+    setUserPage((current) => Math.min(current, userPages));
+  }, [userPages]);
+
+  const visibleUsers = useMemo(() => {
+    const start = (userPage - 1) * USER_PAGE_SIZE;
+    return users.slice(start, start + USER_PAGE_SIZE);
+  }, [userPage, users]);
+
+  const selectedIdSet = useMemo(() => new Set(selectedUserIds), [selectedUserIds]);
+  const visibleIds = useMemo(() => visibleUsers.map((user) => getUserId(user)), [visibleUsers]);
+  const allVisibleSelected =
+    visibleIds.length > 0 && visibleIds.every((memberId) => selectedIdSet.has(memberId));
+
+  const selectedUsers = useMemo(() => {
+    const byId = new Map<string, AppUser>();
+    for (const user of users) {
+      byId.set(getUserId(user), user);
+    }
+
+    return selectedUserIds
+      .map((memberId) => byId.get(memberId))
+      .filter(Boolean) as AppUser[];
+  }, [selectedUserIds, users]);
+
+  const selectedGroupMembers = useMemo(
+    () => resolveGroupMembers(activeGroup, users),
+    [activeGroup, users],
+  );
+
+  const unresolvedGroupMembers = useMemo(() => {
+    if (!activeGroup) {
+      return [];
+    }
+
+    const validSet = new Set(selectedGroupMembers.map((user) => getUserId(user)));
+    return activeGroup.memberIds.filter((memberId) => !validSet.has(memberId));
+  }, [activeGroup, selectedGroupMembers]);
 
   const effectiveRange = useMemo(() => {
     if (datePreset === "custom") {
@@ -123,10 +210,56 @@ export function Reports() {
     return defaultRangeForPreset(datePreset);
   }, [customDateRange, datePreset]);
 
+  const toggleUserSelection = (memberId: string) => {
+    setSelectedUserIds((current) => {
+      if (current.includes(memberId)) {
+        return current.filter((id) => id !== memberId);
+      }
+
+      return [...current, memberId];
+    });
+  };
+
+  const handleSelectAllVisible = () => {
+    setSelectedUserIds((current) => {
+      const currentSet = new Set(current);
+      if (allVisibleSelected) {
+        return current.filter((memberId) => !visibleIds.includes(memberId));
+      }
+
+      for (const memberId of visibleIds) {
+        currentSet.add(memberId);
+      }
+      return Array.from(currentSet);
+    });
+  };
+
+  const handleClearSelection = () => {
+    setSelectedUserIds([]);
+  };
+
   const handleRunReport = async () => {
-    if (selectedUserIds.length === 0) {
-      toast.error("Select at least one user.");
+    const finalIds =
+      selectionMode === "group" && activeGroup
+        ? normalizeMemberIds(activeGroup.memberIds)
+        : normalizeMemberIds(selectedUserIds);
+
+    if (finalIds.length === 0) {
+      toast.error(
+        selectionMode === "group"
+          ? "Select a group with at least one user."
+          : "Select at least one user.",
+      );
       return;
+    }
+
+    if (selectionMode === "group") {
+      const validIds = filterExistingMemberIds(finalIds, users);
+      if (validIds.length === 0) {
+        toast.error("Selected group has no users available in the current database result.");
+        return;
+      }
+      setSelectedUserIds(validIds);
     }
 
     setRunning(true);
@@ -134,7 +267,10 @@ export function Reports() {
 
     try {
       const result = await apiClient.runReport({
-        userIds: selectedUserIds,
+        userIds:
+          selectionMode === "group"
+            ? filterExistingMemberIds(finalIds, users)
+            : finalIds,
         dateRange: buildDateRange(datePreset, customDateRange),
       });
       setReport(result);
@@ -227,42 +363,245 @@ export function Reports() {
     <div className="space-y-6 p-8">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="mb-2 text-3xl font-semibold text-[var(--clockwork-green)]">
-            Reports
-          </h1>
+          <h1 className="mb-2 text-3xl font-semibold text-[var(--clockwork-green)]">Reports</h1>
         </div>
         <PageHelpButton
           title="Reports Help"
-          overview="Build attendance reports for selected users and export them as PDF or CSV."
+          overview="Build attendance reports for selected users or a saved group and export them as PDF or CSV."
           steps={[
-            "Search and select one or more users.",
-            "Choose a date range preset or set a custom range.",
-            "Click Run Report, then export in your preferred format.",
+            "Choose selection mode: manual users or a saved group.",
+            "Pick a date range preset or set a custom range.",
+            "Run report, then export in your preferred format.",
           ]}
         />
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Filters</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Filters</CardTitle>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void loadUsersAndGroups()}
+              disabled={loadingUsers || loadingGroups}
+            >
+              {loadingUsers || loadingGroups ? (
+                <>
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                  Refreshing...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4" />
+                  Refresh Users/Groups
+                </>
+              )}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <Input
-              label="Search Users"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Type username or full name"
-              helperText="Shows up to 20 matches from OrangeHRM users"
-            />
+            <div>
+              <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-700)]">
+                Selection Mode
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant={selectionMode === "users" ? "primary" : "secondary"}
+                  onClick={() => setSelectionMode("users")}
+                >
+                  Select Users
+                </Button>
+                <Button
+                  size="sm"
+                  variant={selectionMode === "group" ? "primary" : "secondary"}
+                  onClick={() => setSelectionMode("group")}
+                >
+                  Select Group
+                </Button>
+              </div>
+            </div>
 
-            <MultiSelect
-              label="Selected Users"
-              options={userOptions}
-              value={selectedUserIds}
-              onChange={setSelectedUserIds}
-              placeholder="Pick one or more users"
-            />
+            {usersError ? (
+              <div className="flex items-start gap-2 rounded-lg border border-[var(--clockwork-error)]/40 bg-red-50 p-3 text-sm text-[var(--clockwork-error)] dark:bg-red-950/20">
+                <AlertCircle className="mt-0.5 h-4 w-4" />
+                <p>{usersError}</p>
+              </div>
+            ) : null}
+
+            {groupsError ? (
+              <div className="flex items-start gap-2 rounded-lg border border-[var(--clockwork-error)]/40 bg-red-50 p-3 text-sm text-[var(--clockwork-error)] dark:bg-red-950/20">
+                <AlertCircle className="mt-0.5 h-4 w-4" />
+                <p>{groupsError}</p>
+              </div>
+            ) : null}
+
+            {selectionMode === "users" ? (
+              <div className="space-y-3 rounded-lg border border-[var(--clockwork-border)] p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm text-[var(--clockwork-gray-600)]">
+                    {users.length} users loaded | Selected:{" "}
+                    <span className="font-semibold text-[var(--clockwork-gray-900)]">
+                      {selectedUserIds.length}
+                    </span>
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={handleSelectAllVisible}
+                      disabled={visibleIds.length === 0}
+                    >
+                      {allVisibleSelected ? "Unselect Visible" : "Select All"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleClearSelection}
+                      disabled={selectedUserIds.length === 0}
+                    >
+                      Clear All
+                    </Button>
+                  </div>
+                </div>
+
+                {loadingUsers ? (
+                  <div className="space-y-2">
+                    {Array.from({ length: 6 }).map((_, index) => (
+                      <div
+                        key={`reports-users-skeleton-${index}`}
+                        className="h-8 animate-pulse rounded bg-[var(--clockwork-gray-100)]"
+                      />
+                    ))}
+                  </div>
+                ) : users.length === 0 ? (
+                  <p className="text-sm text-[var(--clockwork-gray-500)]">
+                    No users available. Check your DB connection and refresh.
+                  </p>
+                ) : (
+                  <>
+                    <div className="overflow-x-auto rounded-lg border border-[var(--clockwork-border)]">
+                      <table className="w-full border-collapse">
+                        <thead className="bg-[var(--clockwork-orange)] text-white">
+                          <tr>
+                            <th className="w-12 px-3 py-2 text-left text-xs font-semibold">#</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold">Full Name</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold">Username</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold">Employee ID</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visibleUsers.map((user) => {
+                            const memberId = getUserId(user);
+                            return (
+                              <tr
+                                key={memberId}
+                                className="border-t border-[var(--clockwork-border)] hover:bg-[var(--clockwork-gray-50)]"
+                              >
+                                <td className="px-3 py-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedIdSet.has(memberId)}
+                                    onChange={() => toggleUserSelection(memberId)}
+                                    className="h-4 w-4 accent-[var(--clockwork-orange)]"
+                                  />
+                                </td>
+                                <td className="px-3 py-2 text-sm text-[var(--clockwork-gray-900)]">
+                                  {user.fullName}
+                                </td>
+                                <td className="px-3 py-2 text-sm text-[var(--clockwork-gray-700)]">
+                                  {user.username}
+                                </td>
+                                <td className="px-3 py-2 text-sm text-[var(--clockwork-gray-700)]">
+                                  {user.employeeId ?? "-"}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-[var(--clockwork-gray-500)]">
+                        Page {userPage} of {userPages}
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setUserPage((current) => Math.max(1, current - 1))}
+                          disabled={userPage <= 1}
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setUserPage((current) => Math.min(userPages, current + 1))}
+                          disabled={userPage >= userPages}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3 rounded-lg border border-[var(--clockwork-border)] p-3">
+                <label
+                  htmlFor="report-group-selector"
+                  className="block text-sm font-medium text-[var(--clockwork-gray-700)]"
+                >
+                  Saved Group
+                </label>
+                <select
+                  id="report-group-selector"
+                  value={selectedGroupId}
+                  onChange={(event) => setSelectedGroupId(event.target.value)}
+                  className="w-full rounded-lg border border-[var(--clockwork-border)] bg-[var(--clockwork-bg-primary)] px-3 py-2 text-sm text-[var(--clockwork-gray-900)] focus:outline-none focus:ring-2 focus:ring-[var(--clockwork-orange)]"
+                >
+                  {groups.length === 0 ? <option value="">No groups found</option> : null}
+                  {groups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name} ({group.memberIds.length})
+                    </option>
+                  ))}
+                </select>
+
+                <div className="rounded border border-[var(--clockwork-border)] p-3">
+                  <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-900)]">
+                    Auto-selected users
+                  </p>
+                  {loadingUsers || loadingGroups ? (
+                    <p className="text-sm text-[var(--clockwork-gray-500)]">Loading group members...</p>
+                  ) : !activeGroup ? (
+                    <p className="text-sm text-[var(--clockwork-gray-500)]">Select a group.</p>
+                  ) : activeGroup.memberIds.length === 0 ? (
+                    <p className="text-sm text-[var(--clockwork-gray-500)]">This group has no members.</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {selectedGroupMembers.map((user) => (
+                        <p
+                          key={getUserId(user)}
+                          className="truncate text-sm text-[var(--clockwork-gray-700)]"
+                        >
+                          {user.fullName} ({user.username})
+                        </p>
+                      ))}
+                      {unresolvedGroupMembers.length > 0 ? (
+                        <p className="text-xs text-[var(--clockwork-warning)]">
+                          {unresolvedGroupMembers.length} member(s) were not found in current DB user list.
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div>
               <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-700)]">
@@ -271,12 +610,10 @@ export function Reports() {
               <div className="flex flex-wrap gap-2">
                 <Button
                   size="sm"
-                  variant={
-                    datePreset === "payroll-cycle" ? "primary" : "secondary"
-                  }
+                  variant={datePreset === "payroll-cycle" ? "primary" : "secondary"}
                   onClick={() => setDatePreset("payroll-cycle")}
                 >
-                26-25
+                  26-25
                 </Button>
                 <Button
                   size="sm"
@@ -335,12 +672,33 @@ export function Reports() {
               {formatDateCompact(effectiveRange.to, defaultCalendar)}
             </p>
 
+            <div className="rounded-lg border border-[var(--clockwork-border)] p-3">
+              <div className="mb-2 flex items-center gap-2 text-sm text-[var(--clockwork-gray-700)]">
+                <Users className="h-4 w-4 text-[var(--clockwork-green)]" />
+                Selected users for report: {selectedUserIds.length}
+              </div>
+              {selectedUsers.length === 0 ? (
+                <p className="text-sm text-[var(--clockwork-gray-500)]">
+                  No selected users yet.
+                </p>
+              ) : (
+                <div className="max-h-36 space-y-1 overflow-y-auto">
+                  {selectedUsers.map((user) => (
+                    <p key={getUserId(user)} className="text-sm text-[var(--clockwork-gray-700)]">
+                      {user.fullName} ({user.username})
+                    </p>
+                  ))}
+                  {selectedUserIds.length > selectedUsers.length ? (
+                    <p className="text-xs text-[var(--clockwork-warning)]">
+                      {selectedUserIds.length - selectedUsers.length} selection(s) are not currently available.
+                    </p>
+                  ) : null}
+                </div>
+              )}
+            </div>
+
             <div className="flex flex-wrap items-center gap-3 pt-2">
-              <Button
-                variant="primary"
-                onClick={handleRunReport}
-                disabled={running}
-              >
+              <Button variant="primary" onClick={handleRunReport} disabled={running}>
                 {running ? (
                   <>
                     <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -373,11 +731,7 @@ export function Reports() {
                     </Button>
                   </div>
 
-                  <Button
-                    variant="secondary"
-                    onClick={handleExport}
-                    disabled={exporting}
-                  >
+                  <Button variant="secondary" onClick={handleExport} disabled={exporting}>
                     {exporting ? (
                       <>
                         <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -402,9 +756,7 @@ export function Reports() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <Card>
               <CardContent>
-                <p className="text-sm text-[var(--clockwork-gray-600)]">
-                  Total Hours
-                </p>
+                <p className="text-sm text-[var(--clockwork-gray-600)]">Total Hours</p>
                 <p className="text-2xl font-semibold text-[var(--clockwork-gray-900)]">
                   {formatHours(report.totals.hours)}
                 </p>
@@ -412,9 +764,7 @@ export function Reports() {
             </Card>
             <Card>
               <CardContent>
-                <p className="text-sm text-[var(--clockwork-gray-600)]">
-                  Records
-                </p>
+                <p className="text-sm text-[var(--clockwork-gray-600)]">Records</p>
                 <p className="text-2xl font-semibold text-[var(--clockwork-gray-900)]">
                   {report.totals.records}
                 </p>
@@ -422,9 +772,7 @@ export function Reports() {
             </Card>
             <Card>
               <CardContent>
-                <p className="text-sm text-[var(--clockwork-gray-600)]">
-                  Users
-                </p>
+                <p className="text-sm text-[var(--clockwork-gray-600)]">Users</p>
                 <p className="text-2xl font-semibold text-[var(--clockwork-gray-900)]">
                   {report.totals.users}
                 </p>
@@ -512,9 +860,7 @@ export function Reports() {
                 </div>
               ) : summary ? (
                 <div className="space-y-3">
-                  <p className="text-sm text-[var(--clockwork-gray-700)]">
-                    {summary.summary}
-                  </p>
+                  <p className="text-sm text-[var(--clockwork-gray-700)]">{summary.summary}</p>
                   {summary.anomalies.length > 0 ? (
                     <div className="rounded-lg border border-[var(--clockwork-orange)]/30 bg-[var(--clockwork-orange-light)] p-3">
                       <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-900)]">
@@ -523,8 +869,7 @@ export function Reports() {
                       <ul className="space-y-1 text-sm text-[var(--clockwork-gray-700)]">
                         {summary.anomalies.map((item) => (
                           <li key={`${item.username}-${item.date}`}>
-                            {item.username} on{" "}
-                            {formatDate(item.date, defaultCalendar)}:{" "}
+                            {item.username} on {formatDate(item.date, defaultCalendar)}:{" "}
                             {item.hours.toFixed(2)} hrs
                           </li>
                         ))}
@@ -534,8 +879,7 @@ export function Reports() {
                 </div>
               ) : (
                 <p className="text-sm text-[var(--clockwork-gray-600)]">
-                  Python integration detected. Generate a summary for additional
-                  insights.
+                  Python integration detected. Generate a summary for additional insights.
                 </p>
               )}
             </CardContent>

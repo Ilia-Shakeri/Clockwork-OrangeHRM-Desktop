@@ -11,7 +11,7 @@ import {
   defaultPortForEngine,
   DEFAULT_SQLITE_PATH,
 } from "./db/index";
-import type { PresencePayload, ReportPayload } from "./dtos";
+import type { PresencePayload, ReportPayload, UserGroup } from "./dtos";
 import { buildCsv, buildPdf } from "./exporters";
 import { PythonEnhancer } from "./python";
 import {
@@ -20,6 +20,8 @@ import {
   getConnection,
   getExportHistory,
   getSettings,
+  getUserGroups,
+  replaceUserGroups,
   saveConnection,
   updateSettings,
 } from "./store";
@@ -114,12 +116,33 @@ const settingsSchema = z.object({
     z.literal(300),
   ]),
   usernameValidationRegex: z.string().min(1),
-  bulkScanMode: z.enum(["combined", "per-user"]),
 });
 
-const usersResolveSchema = z.object({
-  usernames: z.array(z.string().min(1)).max(1000),
+const usersQuerySchema = z.object({
+  query: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  offset: z.coerce.number().int().min(0).max(100000).optional(),
 });
+
+const userGroupCreateSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  description: z.string().trim().max(500).optional(),
+  memberIds: z.array(z.string().trim().min(1)).max(20000).default([]),
+});
+
+const userGroupUpdateSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80).optional(),
+    description: z.union([z.string().trim().max(500), z.null()]).optional(),
+    memberIds: z.array(z.string().trim().min(1)).max(20000).optional(),
+  })
+  .refine(
+    (value) =>
+      value.name !== undefined ||
+      value.description !== undefined ||
+      value.memberIds !== undefined,
+    "At least one field must be provided for update.",
+  );
 
 const reportRequestSchema = z.object({
   userIds: z.array(z.string().min(1)).max(1000),
@@ -240,6 +263,14 @@ function toLocalIsoDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+function normalizeMemberIds(memberIds: string[]): string[] {
+  return Array.from(new Set(memberIds.map((memberId) => memberId.trim()).filter(Boolean)));
+}
+
+function sortGroups(groups: UserGroup[]): UserGroup[] {
+  return [...groups].sort((left, right) => left.name.localeCompare(right.name));
+}
+
 export async function startLocalApiServer(
   options: StartApiServerOptions,
 ): Promise<StartedApiServer> {
@@ -328,40 +359,103 @@ export async function startLocalApiServer(
   api.get(
     "/api/users",
     createRouteHandler(async (req, res) => {
-      const query = typeof req.query.query === "string" ? req.query.query : "";
-      const users = await dbService.searchUsers(query, 20);
+      const parsed = usersQuerySchema.parse({
+        query: typeof req.query.query === "string" ? req.query.query : undefined,
+        limit: typeof req.query.limit === "string" ? req.query.limit : undefined,
+        offset: typeof req.query.offset === "string" ? req.query.offset : undefined,
+      });
+      const users = await dbService.getUsers({
+        query: parsed.query ?? "",
+        limit: parsed.limit ?? 200,
+        offset: parsed.offset ?? 0,
+      });
       res.json({ users });
     }),
   );
 
-  api.post(
-    "/api/users/resolve",
-    createRouteHandler(async (req, res) => {
-      const parsed = usersResolveSchema.parse(req.body);
-      const settings = getSettings(options.store);
+  api.get("/api/user-groups", (_req, res) => {
+    res.json({
+      groups: sortGroups(getUserGroups(options.store)),
+    });
+  });
 
-      let usernameRegex = /^[a-zA-Z0-9._-]+$/;
-      try {
-        usernameRegex = new RegExp(settings.usernameValidationRegex);
-      } catch {
-        usernameRegex = /^[a-zA-Z0-9._-]+$/;
+  api.post(
+    "/api/user-groups",
+    createRouteHandler(async (req, res) => {
+      const parsed = userGroupCreateSchema.parse(req.body);
+      const previousGroups = getUserGroups(options.store);
+      const now = new Date().toISOString();
+      const nextGroup: UserGroup = {
+        id: randomUUID(),
+        name: parsed.name,
+        description: parsed.description?.trim() || undefined,
+        memberIds: normalizeMemberIds(parsed.memberIds),
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const groups = replaceUserGroups(options.store, [...previousGroups, nextGroup]);
+      res.status(201).json({
+        group: nextGroup,
+        groups: sortGroups(groups),
+      });
+    }),
+  );
+
+  api.patch(
+    "/api/user-groups/:groupId",
+    createRouteHandler(async (req, res) => {
+      const groupId = z.string().uuid().parse(req.params.groupId);
+      const parsed = userGroupUpdateSchema.parse(req.body);
+      const previousGroups = getUserGroups(options.store);
+      const index = previousGroups.findIndex((group) => group.id === groupId);
+
+      if (index < 0) {
+        res.status(404).json({ ok: false, error: "Group not found." });
+        return;
       }
 
-      const validated = parsed.usernames.map((username) => username.trim()).filter(Boolean);
-      const uniqueUsernames = Array.from(new Set(validated));
-      const invalidUsernames = uniqueUsernames.filter(
-        (username) => !usernameRegex.test(username),
-      );
-      const validUsernames = uniqueUsernames.filter((username) => usernameRegex.test(username));
+      const current = previousGroups[index];
+      const nextGroup: UserGroup = {
+        ...current,
+        name: parsed.name ?? current.name,
+        description:
+          parsed.description === null
+            ? undefined
+            : (parsed.description ?? current.description),
+        memberIds:
+          parsed.memberIds !== undefined
+            ? normalizeMemberIds(parsed.memberIds)
+            : current.memberIds,
+        updatedAt: new Date().toISOString(),
+      };
 
-      const resolved = await dbService.resolveUsersByUsername(validUsernames);
-      const invalidResults = invalidUsernames.map((username) => ({
-        username,
-        status: "invalid" as const,
-      }));
-
+      const nextGroups = [...previousGroups];
+      nextGroups[index] = nextGroup;
+      const groups = replaceUserGroups(options.store, nextGroups);
       res.json({
-        users: [...resolved, ...invalidResults],
+        group: nextGroup,
+        groups: sortGroups(groups),
+      });
+    }),
+  );
+
+  api.delete(
+    "/api/user-groups/:groupId",
+    createRouteHandler(async (req, res) => {
+      const groupId = z.string().uuid().parse(req.params.groupId);
+      const previousGroups = getUserGroups(options.store);
+      const filteredGroups = previousGroups.filter((group) => group.id !== groupId);
+
+      if (filteredGroups.length === previousGroups.length) {
+        res.status(404).json({ ok: false, error: "Group not found." });
+        return;
+      }
+
+      const groups = replaceUserGroups(options.store, filteredGroups);
+      res.json({
+        ok: true,
+        groups: sortGroups(groups),
       });
     }),
   );
