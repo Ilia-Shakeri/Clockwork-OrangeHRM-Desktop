@@ -17,9 +17,18 @@ const DEFAULT_SETTINGS: UiSettings = {
   defaultExportFormat: "pdf",
   defaultDatePreset: "current",
   defaultCalendar: "shamsi",
-  usernameValidationRegex: "^[a-zA-Z0-9._-]+$",
+  defaultPresenceRefreshSeconds: 30,
+  usernameValidationRegex: "^[A-Za-z]{2}\\.[A-Za-z][A-Za-z0-9_-]*$",
   bulkScanMode: "combined",
 };
+
+const PRESENCE_REFRESH_OPTIONS = [
+  { value: 15, label: "15 seconds" },
+  { value: 30, label: "30 seconds" },
+  { value: 60, label: "1 minute" },
+  { value: 120, label: "2 minutes" },
+  { value: 300, label: "5 minutes" },
+];
 
 export function Settings() {
   const [settings, setSettings] = useState<UiSettings>(DEFAULT_SETTINGS);
@@ -257,6 +266,32 @@ export function Settings() {
             </div>
 
             <div>
+              <label
+                htmlFor="presence-refresh-interval"
+                className="mb-2 block text-sm font-medium text-[var(--clockwork-gray-700)]"
+              >
+                Live Presence Auto Refresh
+              </label>
+              <select
+                id="presence-refresh-interval"
+                value={settings.defaultPresenceRefreshSeconds}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    defaultPresenceRefreshSeconds: Number(event.target.value),
+                  }))
+                }
+                className="w-full max-w-xs rounded-lg border border-[var(--clockwork-border)] bg-[var(--clockwork-bg-primary)] px-3 py-2 text-sm text-[var(--clockwork-gray-900)] transition-all focus:outline-none focus:ring-2 focus:ring-[var(--clockwork-orange)]"
+              >
+                {PRESENCE_REFRESH_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
               <p className="mb-2 text-sm font-medium text-[var(--clockwork-gray-700)]">
                 Bulk Scan Mode
               </p>
@@ -313,7 +348,7 @@ export function Settings() {
                 usernameValidationRegex: event.target.value,
               }))
             }
-            helperText="Used by Bulk Scan for client-side and backend validation"
+            helperText="Default format is two letters + dot + family name (example: am.rezaei). You can change it."
             error={
               regexStatus === "invalid" ? "Invalid regex pattern" : undefined
             }

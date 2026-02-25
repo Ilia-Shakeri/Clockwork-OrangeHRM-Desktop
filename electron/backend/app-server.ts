@@ -32,6 +32,13 @@ const settingsSchema = z.object({
   defaultExportFormat: z.enum(["pdf", "csv"]),
   defaultDatePreset: z.enum(["current", "last", "payroll-cycle", "custom"]),
   defaultCalendar: z.enum(["gregorian", "shamsi"]),
+  defaultPresenceRefreshSeconds: z.union([
+    z.literal(15),
+    z.literal(30),
+    z.literal(60),
+    z.literal(120),
+    z.literal(300),
+  ]),
   usernameValidationRegex: z.string().min(1),
   bulkScanMode: z.enum(["combined", "per-user"]),
 });

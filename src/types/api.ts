@@ -16,6 +16,7 @@ export interface UiSettings {
   defaultExportFormat: ExportFormat;
   defaultDatePreset: DateRangePreset;
   defaultCalendar: DateDisplayCalendar;
+  defaultPresenceRefreshSeconds: number;
   usernameValidationRegex: string;
   bulkScanMode: BulkScanMode;
 }

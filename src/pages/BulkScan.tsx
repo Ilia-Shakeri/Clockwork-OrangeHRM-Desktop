@@ -29,7 +29,8 @@ function defaultSettings(): UiSettings {
     defaultExportFormat: "pdf",
     defaultDatePreset: "current",
     defaultCalendar: "shamsi",
-    usernameValidationRegex: "^[a-zA-Z0-9._-]+$",
+    defaultPresenceRefreshSeconds: 30,
+    usernameValidationRegex: "^[A-Za-z]{2}\\.[A-Za-z][A-Za-z0-9_-]*$",
     bulkScanMode: "combined",
   };
 }
@@ -90,7 +91,7 @@ export function BulkScan() {
     try {
       return new RegExp(settings.usernameValidationRegex);
     } catch {
-      return /^[a-zA-Z0-9._-]+$/;
+      return /^[A-Za-z]{2}\.[A-Za-z][A-Za-z0-9_-]*$/;
     }
   }, [settings.usernameValidationRegex]);
 

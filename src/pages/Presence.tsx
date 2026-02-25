@@ -12,8 +12,6 @@ import { PageHelpButton } from "@/components/PageHelpButton";
 import { formatDateCompact, todayIso } from "@/lib/helpers";
 import type { DateDisplayCalendar, PresenceRow, PresenceStatus } from "@/types/api";
 
-const AUTO_REFRESH_MS = 30_000;
-
 function statusOrder(status: PresenceStatus): number {
   if (status === "inside") {
     return 0;
@@ -64,6 +62,7 @@ function renderStatusBadge(row: PresenceRow) {
 export function Presence() {
   const [selectedDate, setSelectedDate] = useState(() => todayIso());
   const [defaultCalendar, setDefaultCalendar] = useState<DateDisplayCalendar>("shamsi");
+  const [refreshSeconds, setRefreshSeconds] = useState(30);
   const [search, setSearch] = useState("");
 
   const [rows, setRows] = useState<PresenceRow[]>([]);
@@ -88,6 +87,7 @@ export function Presence() {
         }
 
         setDefaultCalendar(response.settings.defaultCalendar);
+        setRefreshSeconds(response.settings.defaultPresenceRefreshSeconds);
       })
       .catch(() => {
         // Keep fallback calendar when settings are unavailable.
@@ -143,12 +143,12 @@ export function Presence() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       void loadPresence(selectedDate, false);
-    }, AUTO_REFRESH_MS);
+    }, refreshSeconds * 1000);
 
     return () => {
       window.clearInterval(timer);
     };
-  }, [loadPresence, selectedDate]);
+  }, [loadPresence, refreshSeconds, selectedDate]);
 
   const filteredRows = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
@@ -191,7 +191,7 @@ export function Presence() {
           </div>
         </div>
         <div className="flex items-start gap-2">
-          <div className="mt-3 flex flex-col items-start gap-1">
+          <div className="mt-3 flex flex-col items-center gap-1">
             <Button
               variant="secondary"
               className="transform-gpu transition-all duration-150 hover:-translate-y-0.5 hover:shadow-[var(--clockwork-shadow-sm)] active:scale-95"
@@ -209,7 +209,9 @@ export function Presence() {
                 </>
               )}
             </Button>
-            <p className="text-xs text-[var(--clockwork-gray-500)]">Auto-refresh: 30s</p>
+            <p className="text-center text-xs text-[var(--clockwork-gray-500)]">
+              Auto-refresh: {refreshSeconds}s
+            </p>
           </div>
           <PageHelpButton
             title="Live Presence Help"

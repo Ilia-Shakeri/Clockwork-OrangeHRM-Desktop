@@ -21,7 +21,8 @@ const DEFAULT_SETTINGS: UiSettings = {
   defaultExportFormat: "pdf",
   defaultDatePreset: "current",
   defaultCalendar: "shamsi",
-  usernameValidationRegex: "^[a-zA-Z0-9._-]+$",
+  defaultPresenceRefreshSeconds: 30,
+  usernameValidationRegex: "^[A-Za-z]{2}\\.[A-Za-z][A-Za-z0-9_-]*$",
   bulkScanMode: "combined",
 };
 
@@ -33,6 +34,11 @@ function normalizeSettings(settings: Partial<UiSettings> | null | undefined): Ui
 
   if (normalized.defaultCalendar !== "gregorian" && normalized.defaultCalendar !== "shamsi") {
     normalized.defaultCalendar = "shamsi";
+  }
+
+  const allowedRefreshIntervals = new Set([15, 30, 60, 120, 300]);
+  if (!allowedRefreshIntervals.has(normalized.defaultPresenceRefreshSeconds)) {
+    normalized.defaultPresenceRefreshSeconds = DEFAULT_SETTINGS.defaultPresenceRefreshSeconds;
   }
 
   return normalized;
