@@ -46,7 +46,7 @@
   --clockwork-radius-sm: 6px;
   --clockwork-radius-lg: 12px;
 
-  /* Default Figma Make theme colors - keeping for compatibility */
+  /* Default compatibility theme colors */
   --font-size: 16px;
   --background: #ffffff;
   --foreground: oklch(0.145 0 0);

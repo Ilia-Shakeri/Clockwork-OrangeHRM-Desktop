@@ -1,3 +1,4 @@
+// Author: Ilia Shakeri
 import type { Server } from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";

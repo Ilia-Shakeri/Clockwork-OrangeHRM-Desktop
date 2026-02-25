@@ -1,3 +1,4 @@
+// Author: Ilia Shakeri
 import path from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { startLocalApiServer, type StartedApiServer } from "./backend/app-server";
