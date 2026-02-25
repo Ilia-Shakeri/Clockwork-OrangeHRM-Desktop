@@ -53,9 +53,6 @@ export function Dashboard() {
     <div className="space-y-8 p-8">
       <div>
         <h1 className="mb-2 text-3xl font-semibold text-[var(--clockwork-green)]">Dashboard</h1>
-        <p className="text-[var(--clockwork-gray-600)]">
-          Windows-first attendance reporting for OrangeHRM with local API and direct MySQL access.
-        </p>
         {error ? <p className="mt-2 text-sm text-[var(--clockwork-error)]">{error}</p> : null}
       </div>
 

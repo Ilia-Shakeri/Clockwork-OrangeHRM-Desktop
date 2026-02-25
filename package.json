@@ -112,6 +112,7 @@
       "dist/**/*",
       "dist-electron/**/*",
       "python/**/*",
+      "src/assets/App-Logo.ico",
       "package.json"
     ],
     "asar": true,
@@ -119,10 +120,14 @@
       "target": [
         "nsis"
       ],
+      "icon": "src/assets/App-Logo.ico",
       "artifactName": "${productName}-Setup-${version}.${ext}",
       "signAndEditExecutable": false
     },
     "nsis": {
+      "installerIcon": "src/assets/App-Logo.ico",
+      "uninstallerIcon": "src/assets/App-Logo.ico",
+      "installerHeaderIcon": "src/assets/App-Logo.ico",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     }

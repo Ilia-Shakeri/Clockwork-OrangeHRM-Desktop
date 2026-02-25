@@ -12,7 +12,9 @@ import { toast, Toaster } from "sonner";
 import { apiClient } from "@/api/client";
 import { cn } from "@/app/lib/utils";
 import { GlassThemeToggle } from "@/components/GlassThemeToggle";
+import AppHeader from "@/components/AppHeader";
 import type { UiSettings } from "@/types/api";
+import mainLogo from "@/assets/Main-Logo.png";
 
 const navigationItems = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -68,61 +70,52 @@ export function Layout() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[var(--clockwork-bg-primary)]">
-      <aside className="flex h-screen w-64 flex-col border-r border-[var(--clockwork-border)] bg-[var(--clockwork-bg-secondary)]">
-        <div className="border-b border-[var(--clockwork-border)] p-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--clockwork-orange)] text-white">
-              C
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold text-[var(--clockwork-gray-900)]">
-                Clockwork
-              </h1>
-              <p className="text-xs text-[var(--clockwork-gray-500)]">OrangeHRM Desktop</p>
-            </div>
-          </div>
-        </div>
+    <div className="relative h-screen overflow-hidden bg-[var(--clockwork-bg-primary)]">
+      <AppHeader />
 
-        <nav className="flex-1 space-y-1 overflow-y-auto p-4">
-          {navigationItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.to === "/"}
-                className={({ isActive }) =>
-                  cn(
-                    "flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-all",
-                    isActive
-                      ? "bg-[var(--clockwork-orange-light)] text-[var(--clockwork-orange)]"
-                      : "text-[var(--clockwork-gray-700)] hover:bg-[var(--clockwork-gray-100)]",
-                  )
-                }
-              >
-                <Icon className="h-5 w-5" />
-                <span>{item.label}</span>
-              </NavLink>
-            );
-          })}
-        </nav>
+      <div className="relative z-10 flex h-screen">
+        <aside className="flex h-full w-64 flex-col border-r border-[var(--clockwork-border)] bg-[var(--clockwork-bg-secondary)]">
+          <img
+            src={mainLogo}
+            alt="Clockwork logo"
+            className="h-40 w-full border-b border-[var(--clockwork-border)] object-cover"
+          />
 
-        <div className="border-t border-[var(--clockwork-border)] p-4 text-xs text-[var(--clockwork-gray-500)]">
-          <div className="mb-3 flex items-center justify-between">
-            <span className="text-xs text-[var(--clockwork-gray-600)]">Theme</span>
+          <nav className="flex-1 space-y-1 overflow-y-auto p-4">
+            {navigationItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === "/"}
+                  className={({ isActive }) =>
+                    cn(
+                      "flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-all",
+                      isActive
+                        ? "bg-[var(--clockwork-orange-light)] text-[var(--clockwork-orange)]"
+                        : "text-[var(--clockwork-gray-700)] hover:bg-[var(--clockwork-gray-100)]",
+                    )
+                  }
+                >
+                  <Icon className="h-5 w-5" />
+                  <span>{item.label}</span>
+                </NavLink>
+              );
+            })}
+          </nav>
+
+          <div className="flex justify-center border-t border-[var(--clockwork-border)] p-4">
             <GlassThemeToggle isDark={isDark} onToggle={() => void handleThemeToggle()} />
           </div>
-          <p>Clockwork OrangeHRM Desktop</p>
-          <p>Version 1.0.0</p>
-        </div>
-      </aside>
+        </aside>
 
-      <main className="flex-1 overflow-auto">
-        <Outlet />
-      </main>
+        <main className="flex-1 overflow-auto">
+          <Outlet />
+        </main>
+      </div>
 
-      <Toaster position="top-right" richColors />
+      <Toaster position="bottom-right" richColors />
     </div>
   );
 }

@@ -29,6 +29,14 @@ function resolveRendererIndexPath(): string {
   return path.join(__dirname, "..", "dist", "index.html");
 }
 
+function resolveWindowIconPath(): string {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, "assets", "App-Logo.ico");
+  }
+
+  return path.join(app.getAppPath(), "src", "assets", "App-Logo.ico");
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.getApiBaseUrl, async () => apiBaseUrl);
 
@@ -88,7 +96,10 @@ async function createMainWindow(): Promise<void> {
     minWidth: 1120,
     minHeight: 740,
     title: "Clockwork OrangeHRM Desktop",
+    icon: resolveWindowIconPath(),
     backgroundColor: "#F7F7F7",
+    frame: false,
+    autoHideMenuBar: true,
     webPreferences: {
       preload: resolvePreloadPath(),
       contextIsolation: true,
